@@ -1,0 +1,101 @@
+# k8s/tekton/tasks/detect-changes-task.yaml
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: detect-changes
+spec:
+  params:
+    - name: gitrevision
+      type: string
+    - name: gitrepositoryurl
+      type: string
+    - name: pipelinerun-name
+      type: string
+      default: ""
+  results:
+    - name: changed-components
+      description: Space-separated list of components that changed.
+  steps:
+    - name: check-concurrency
+      image: alpine/k8s:1.20.4
+      script: |
+        #!/bin/sh
+        set -e
+
+        CURRENT_RUN="$(params.pipelinerun-name)"
+        if [ -z "${CURRENT_RUN}" ]; then
+          echo "No PipelineRun name provided. Skipping concurrency check."
+          exit 0
+        fi
+
+        echo "Checking concurrency queue status for PipelineRun: ${CURRENT_RUN}"
+
+        while true; do
+          # Get all running orchestrator PipelineRuns in the namespace, sorted by creation timestamp
+          RUNNING_RUNS=$(kubectl get pipelinerun -n saritasa-test -o jsonpath='{range .items[?(@.status.conditions[0].status=="Unknown")]}{.metadata.name}{" "}{.metadata.creationTimestamp}{"\n"}{end}' | grep "^orchestrator-pipelinerun-" | sort -k2)
+          
+          if [ -z "${RUNNING_RUNS}" ]; then
+            echo "No running PipelineRuns found. Proceeding."
+            break
+          fi
+          
+          # Get the oldest running PipelineRun name
+          OLDEST_RUN=$(echo "${RUNNING_RUNS}" | head -n1 | awk '{print $1}')
+          
+          if [ "${OLDEST_RUN}" = "${CURRENT_RUN}" ]; then
+            echo "Current PipelineRun is the oldest running instance. Proceeding."
+            break
+          fi
+          
+          echo "Current run is queued. Oldest running run is ${OLDEST_RUN}. Waiting for 10 seconds..."
+          sleep 10
+        done
+    - name: run-diff-and-dispatch
+      image: alpine/git:v2.30.2
+      script: |
+        #!/bin/sh
+        git clone $(params.gitrepositoryurl) repo && cd repo
+        git checkout $(params.gitrevision)
+
+        CATEGORIES="dotnet-core go java nodejs php python ruby web-servers"
+        MODULES=""
+        for cat in ${CATEGORIES}; do
+          if [ -d "${cat}" ]; then
+            for sub in "${cat}"/*; do
+              if [ -d "${sub}" ]; then
+                case "${sub}" in
+                  java/java-node|java/native-image)
+                    for subsub in "${sub}"/*; do
+                      if [ -d "${subsub}" ]; then
+                        MODULES="${MODULES} ${subsub}"
+                      fi
+                    done
+                    ;;
+                  *)
+                    MODULES="${MODULES} ${sub}"
+                    ;;
+                esac
+              fi
+            done
+          fi
+        done
+
+        CHANGED_COMPONENTS=""
+        for dir in ${MODULES}; do
+          if git diff-tree --no-commit-id --name-only -r $(params.gitrevision) | grep -q "^${dir}/"; then
+            CHANGED_COMPONENTS="${CHANGED_COMPONENTS} ${dir}"
+          fi
+        done
+
+        if [ -z "${CHANGED_COMPONENTS}" ]; then
+          echo "[NO-OP] No buildpack-ready components changed."
+          echo -n "" > $(results.changed-components.path)
+          exit 0
+        fi
+
+        CHANGED_COMPONENTS=$(echo "${CHANGED_COMPONENTS}" | xargs)
+        echo -n "${CHANGED_COMPONENTS}" > $(results.changed-components.path)
+
+        for component in ${CHANGED_COMPONENTS}; do
+          echo "Dispatched PipelineRun for component: ${component}"
+        done

@@ -1,0 +1,130 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: orchestrator-pipeline
+  namespace: saritasa-test
+spec:
+  params:
+    - name: gitrevision
+      type: string
+      description: The git revision/sha to build.
+    - name: gitrepositoryurl
+      type: string
+      description: The git repository URL.
+  tasks:
+    - name: detect-changes
+      taskRef:
+        name: detect-changes
+      params:
+        - name: gitrevision
+          value: $(params.gitrevision)
+        - name: gitrepositoryurl
+          value: $(params.gitrepositoryurl)
+        - name: pipelinerun-name
+          value: $(context.pipelineRun.name)
+    - name: dispatch-builds
+      runAfter:
+        - detect-changes
+      params:
+        - name: changed-components
+          value: $(tasks.detect-changes.results.changed-components)
+      taskSpec:
+        params:
+          - name: changed-components
+            type: string
+        steps:
+          - name: dispatch
+            image: alpine/k8s:1.20.4
+            script: |
+              #!/bin/sh
+              set -e
+
+              CHANGED_COMPONENTS="$(params.changed-components)"
+
+              if [ -z "${CHANGED_COMPONENTS}" ]; then
+                echo "No components changed. Nothing to build."
+                exit 0
+              fi
+
+              for component in ${CHANGED_COMPONENTS}; do
+                # Clean up the name for Kubernetes resource naming (replace slash with hyphen)
+                clean_name=$(echo "${component}" | tr '/' '-')
+                
+                # Determine builder image and buildpack based on language/category
+                category=$(echo "${component}" | cut -d'/' -f1)
+                
+                builder="paketobuildpacks/builder-jammy-base:latest"
+                buildpack=""
+                
+                case "${category}" in
+                  dotnet-core) buildpack="paketo-buildpacks/dotnet-core" ;;
+                  go) buildpack="paketo-buildpacks/go" ;;
+                  java) buildpack="paketo-buildpacks/java" ;;
+                  nodejs) buildpack="paketo-buildpacks/nodejs" ;;
+                  php) buildpack="paketo-buildpacks/php" ;;
+                  python) buildpack="paketo-buildpacks/python" ;;
+                  ruby) buildpack="paketo-buildpacks/ruby" ;;
+                  web-servers) buildpack="paketo-buildpacks/web-servers" ;;
+                esac
+
+                # Define the target registry and image name
+                app_image="ghcr.io/saritasa-test/${clean_name}:latest"
+
+                echo "Dispatching PipelineRun for ${component}..."
+                
+                cat <<EOF | kubectl apply -f -
+              apiVersion: tekton.dev/v1beta1
+              kind: PipelineRun
+              metadata:
+                generateName: build-${clean_name}-
+                namespace: saritasa-test
+              spec:
+                serviceAccountName: pipeline-service-account
+                taskSpec:
+                  workspaces:
+                    - name: source
+                  params:
+                    - name: APP_IMAGE
+                      type: string
+                    - name: BUILDER_IMAGE
+                      type: string
+                    - name: SOURCE_SUBPATH
+                      type: string
+                    - name: BUILDPACK
+                      type: string
+                  tasks:
+                    - name: build-task
+                      taskRef:
+                        name: buildpack-build
+                      workspaces:
+                        - name: source
+                          workspace: source
+                      params:
+                        - name: APP_IMAGE
+                          value: \$(params.APP_IMAGE)
+                        - name: BUILDER_IMAGE
+                          value: \$(params.BUILDER_IMAGE)
+                        - name: SOURCE_SUBPATH
+                          value: \$(params.SOURCE_SUBPATH)
+                        - name: BUILDPACK
+                          value: \$(params.BUILDPACK)
+                workspaces:
+                  - name: source
+                    volumeClaimTemplate:
+                      spec:
+                        accessModes:
+                          - ReadWriteOnce
+                        resources:
+                          requests:
+                            storage: 1Gi
+                params:
+                  - name: APP_IMAGE
+                    value: "${app_image}"
+                  - name: BUILDER_IMAGE
+                    value: "${builder}"
+                  - name: SOURCE_SUBPATH
+                    value: "${component}"
+                  - name: BUILDPACK
+                    value: "${buildpack}"
+              EOF
+              done

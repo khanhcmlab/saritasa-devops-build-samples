@@ -1,0 +1,59 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: buildpack-build
+  labels:
+    app.kubernetes.io/version: "0.1"
+  annotations:
+    tekton.dev/categories: Image Build
+    tekton.dev/pipelines.minVersion: "0.17.0"
+    tekton.dev/tags: image-build
+    tekton.dev/displayName: "Buildpacks Build via Pack CLI"
+spec:
+  description: >-
+    Builds source code into a container image and pushes it to a registry
+    using the pack CLI and Paketo Buildpacks.
+  workspaces:
+    - name: source
+      description: Workspace containing the application source code.
+  params:
+    - name: APP_IMAGE
+      type: string
+      description: The name of the image to build and push (e.g. ghcr.io/org/repo:tag).
+    - name: BUILDER_IMAGE
+      type: string
+      description: The Paketo builder image to use (e.g. paketobuildpacks/builder-jammy-base:latest).
+    - name: SOURCE_SUBPATH
+      type: string
+      description: Subpath within the source workspace where the build context is located.
+      default: ""
+    - name: BUILDPACK
+      type: string
+      description: Optional buildpack to use (e.g. paketo-buildpacks/python).
+      default: ""
+  steps:
+    - name: pack-build
+      image: buildpacksio/pack:latest
+      script: |
+        #!/bin/sh
+        set -e
+
+        # Setup Docker Config for registry credentials if provided by Tekton
+        if [ -f "/tekton/creds/.docker/config.json" ]; then
+          mkdir -p ~/.docker
+          cp /tekton/creds/.docker/config.json ~/.docker/config.json
+        elif [ -d "/tekton/creds" ]; then
+          export DOCKER_CONFIG="/tekton/creds"
+        fi
+
+        BUILDPACK_ARG=""
+        if [ -n "$(params.BUILDPACK)" ]; then
+          BUILDPACK_ARG="--buildpack $(params.BUILDPACK)"
+        fi
+
+        # Execute pack build daemonless and push directly to registry
+        pack build "$(params.APP_IMAGE)" \
+          --builder "$(params.BUILDER_IMAGE)" \
+          --path "$(workspaces.source.path)/$(params.SOURCE_SUBPATH)" \
+          ${BUILDPACK_ARG} \
+          --publish

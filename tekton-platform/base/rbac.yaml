@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: pipeline-service-account
-  namespace: default
+  namespace: saritasa-test
 secrets:
   - name: ghcr-creds
 ---
@@ -10,7 +10,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: pipeline-role
-  namespace: default
+  namespace: saritasa-test
 rules:
   - apiGroups: ["tekton.dev"]
     resources: ["pipelineruns", "pipelines", "tasks"]
@@ -26,12 +26,39 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: pipeline-role-binding
-  namespace: default
+  namespace: saritasa-test
 subjects:
   - kind: ServiceAccount
     name: pipeline-service-account
-    namespace: default
+    namespace: saritasa-test
 roleRef:
   kind: Role
   name: pipeline-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pipeline-eventlistener-role-binding
+  namespace: saritasa-test
+subjects:
+  - kind: ServiceAccount
+    name: pipeline-service-account
+    namespace: saritasa-test
+roleRef:
+  kind: ClusterRole
+  name: tekton-triggers-eventlistener-roles
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: pipeline-cluster-role-binding
+subjects:
+  - kind: ServiceAccount
+    name: pipeline-service-account
+    namespace: saritasa-test
+roleRef:
+  kind: ClusterRole
+  name: tekton-triggers-eventlistener-clusterroles
   apiGroup: rbac.authorization.k8s.io

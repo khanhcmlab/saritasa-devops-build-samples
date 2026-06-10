@@ -1,0 +1,22 @@
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: EventListener
+metadata:
+  name: gh-event-listener
+spec:
+  serviceAccountName: pipeline-service-account
+  triggers:
+    - name: github-trigger
+      interceptors:
+        - ref:
+            name: "github"
+          params:
+            - name: "secretRef"
+              value:
+                secretName: "github-webhook-secret"
+                secretKey: "token"
+            - name: "eventTypes"
+              value: ["push", "pull-request", "pull_request"]
+      bindings:
+        - ref: github-binding
+      template:
+        ref: orchestrator-template
