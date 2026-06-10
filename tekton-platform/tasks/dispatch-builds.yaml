@@ -8,6 +8,13 @@ spec:
     - name: changed-components
       type: string
       description: Space-separated list of components that changed.
+    - name: gitrevision
+      type: string
+      description: The git revision/sha to build.
+    - name: action
+      type: string
+      description: Action to perform (build or deploy).
+      default: "build"
   steps:
     - name: dispatch
       image: alpine/k8s:1.20.4
@@ -16,9 +23,11 @@ spec:
         set -e
 
         CHANGED_COMPONENTS="$(params.changed-components)"
+        ACTION="$(params.action)"
+        GITREVISION="$(params.gitrevision)"
 
         if [ -z "${CHANGED_COMPONENTS}" ]; then
-          echo "No components changed. Nothing to build."
+          echo "No components changed. Nothing to build or deploy."
           exit 0
         fi
 
@@ -43,11 +52,92 @@ spec:
           esac
 
           # Define the target registry and image name
-          app_image="ghcr.io/saritasa-test/${clean_name}:latest"
+          app_image="ghcr.io/saritasa-test/${clean_name}:${GITREVISION}"
 
-          echo "Dispatching PipelineRun for ${component}..."
+          echo "Dispatching PipelineRun for ${component} with action ${ACTION}..."
           
-          cat <<EOF | kubectl apply -f -
+          if [ "${ACTION}" = "deploy" ]; then
+            cat <<EOF | kubectl apply -f -
+        apiVersion: tekton.dev/v1beta1
+        kind: PipelineRun
+        metadata:
+          generateName: deploy-${clean_name}-
+          namespace: saritasa-test
+        spec:
+          serviceAccountName: pipeline-service-account
+          taskSpec:
+            workspaces:
+              - name: source
+            params:
+              - name: APP_IMAGE
+                type: string
+              - name: BUILDER_IMAGE
+                type: string
+              - name: SOURCE_SUBPATH
+                type: string
+              - name: BUILDPACK
+                type: string
+              - name: DEPLOYMENT_NAME
+                type: string
+              - name: IMAGE_NAME
+                type: string
+              - name: TAG
+                type: string
+            tasks:
+              - name: build-task
+                taskRef:
+                  name: buildpack-build
+                workspaces:
+                  - name: source
+                    workspace: source
+                params:
+                  - name: APP_IMAGE
+                    value: \$(params.APP_IMAGE)
+                  - name: BUILDER_IMAGE
+                    value: \$(params.BUILDER_IMAGE)
+                  - name: SOURCE_SUBPATH
+                    value: \$(params.SOURCE_SUBPATH)
+                  - name: BUILDPACK
+                    value: \$(params.BUILDPACK)
+              - name: deploy-task
+                runAfter:
+                  - build-task
+                taskRef:
+                  name: deploy-task
+                params:
+                  - name: DEPLOYMENT_NAME
+                    value: \$(params.DEPLOYMENT_NAME)
+                  - name: IMAGE_NAME
+                    value: \$(params.IMAGE_NAME)
+                  - name: TAG
+                    value: \$(params.TAG)
+          workspaces:
+            - name: source
+              volumeClaimTemplate:
+                spec:
+                  accessModes:
+                    - ReadWriteOnce
+                  resources:
+                    requests:
+                      storage: 1Gi
+          params:
+            - name: APP_IMAGE
+              value: "${app_image}"
+            - name: BUILDER_IMAGE
+              value: "${builder}"
+            - name: SOURCE_SUBPATH
+              value: "${component}"
+            - name: BUILDPACK
+              value: "${buildpack}"
+            - name: DEPLOYMENT_NAME
+              value: "${clean_name}"
+            - name: IMAGE_NAME
+              value: "ghcr.io/saritasa-test/${clean_name}"
+            - name: TAG
+              value: "${GITREVISION}"
+        EOF
+          else
+            cat <<EOF | kubectl apply -f -
         apiVersion: tekton.dev/v1beta1
         kind: PipelineRun
         metadata:
@@ -102,4 +192,5 @@ spec:
             - name: BUILDPACK
               value: "${buildpack}"
         EOF
+          fi
         done

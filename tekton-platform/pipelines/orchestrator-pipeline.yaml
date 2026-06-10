@@ -11,6 +11,10 @@ spec:
     - name: gitrepositoryurl
       type: string
       description: The git repository URL.
+    - name: action
+      type: string
+      description: The action to perform (build or deploy).
+      default: "build"
   tasks:
     - name: detect-changes
       taskRef:
@@ -28,5 +32,9 @@ spec:
       params:
         - name: changed-components
           value: $(tasks.detect-changes.results.changed-components)
+        - name: action
+          value: $(params.action)
+        - name: gitrevision
+          value: $(params.gitrevision)
       taskRef:
         name: dispatch-builds

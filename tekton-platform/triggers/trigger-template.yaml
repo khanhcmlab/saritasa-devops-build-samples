@@ -1,7 +1,7 @@
 apiVersion: triggers.tekton.dev/v1alpha1
 kind: TriggerTemplate
 metadata:
-  name: orchestrator-template
+  name: trigger-template
   namespace: saritasa-test
 spec:
   params:
@@ -9,6 +9,9 @@ spec:
       description: The git revision/sha to build
     - name: gitrepositoryurl
       description: The git repository URL
+    - name: action
+      description: The action to perform (build or deploy)
+      default: "build"
   resourcetemplates:
     - apiVersion: tekton.dev/v1beta1
       kind: PipelineRun
@@ -24,3 +27,5 @@ spec:
             value: $(tt.params.gitrevision)
           - name: gitrepositoryurl
             value: $(tt.params.gitrepositoryurl)
+          - name: action
+            value: $(tt.params.action)
