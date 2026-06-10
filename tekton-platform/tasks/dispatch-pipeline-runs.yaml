@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
-  name: dispatch-builds
+  name: dispatch-pipeline-runs
   namespace: saritasa-test
 spec:
   params:
@@ -84,11 +84,11 @@ spec:
                     value: "${component}"
                   - name: BUILDPACK
                     value: "${buildpack}"
-              - name: deploy-task
+              - name: patch-deployment
                 runAfter:
                   - build-task
                 taskRef:
-                  name: deploy-task
+                  name: patch-deployment
                 params:
                   - name: DEPLOYMENT_NAME
                     value: "${clean_name}"
