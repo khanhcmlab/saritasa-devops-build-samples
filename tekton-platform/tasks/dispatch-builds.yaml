@@ -68,21 +68,6 @@ spec:
           taskSpec:
             workspaces:
               - name: source
-            params:
-              - name: APP_IMAGE
-                type: string
-              - name: BUILDER_IMAGE
-                type: string
-              - name: SOURCE_SUBPATH
-                type: string
-              - name: BUILDPACK
-                type: string
-              - name: DEPLOYMENT_NAME
-                type: string
-              - name: IMAGE_NAME
-                type: string
-              - name: TAG
-                type: string
             tasks:
               - name: build-task
                 taskRef:
@@ -92,13 +77,13 @@ spec:
                     workspace: source
                 params:
                   - name: APP_IMAGE
-                    value: \$(params.APP_IMAGE)
+                    value: "${app_image}"
                   - name: BUILDER_IMAGE
-                    value: \$(params.BUILDER_IMAGE)
+                    value: "${builder}"
                   - name: SOURCE_SUBPATH
-                    value: \$(params.SOURCE_SUBPATH)
+                    value: "${component}"
                   - name: BUILDPACK
-                    value: \$(params.BUILDPACK)
+                    value: "${buildpack}"
               - name: deploy-task
                 runAfter:
                   - build-task
@@ -106,11 +91,11 @@ spec:
                   name: deploy-task
                 params:
                   - name: DEPLOYMENT_NAME
-                    value: \$(params.DEPLOYMENT_NAME)
+                    value: "${clean_name}"
                   - name: IMAGE_NAME
-                    value: \$(params.IMAGE_NAME)
+                    value: "ghcr.io/saritasa-test/${clean_name}"
                   - name: TAG
-                    value: \$(params.TAG)
+                    value: "${GITREVISION}"
           workspaces:
             - name: source
               volumeClaimTemplate:
@@ -120,21 +105,6 @@ spec:
                   resources:
                     requests:
                       storage: 1Gi
-          params:
-            - name: APP_IMAGE
-              value: "${app_image}"
-            - name: BUILDER_IMAGE
-              value: "${builder}"
-            - name: SOURCE_SUBPATH
-              value: "${component}"
-            - name: BUILDPACK
-              value: "${buildpack}"
-            - name: DEPLOYMENT_NAME
-              value: "${clean_name}"
-            - name: IMAGE_NAME
-              value: "ghcr.io/saritasa-test/${clean_name}"
-            - name: TAG
-              value: "${GITREVISION}"
         EOF
           else
             cat <<EOF | kubectl apply -f -
@@ -148,15 +118,6 @@ spec:
           taskSpec:
             workspaces:
               - name: source
-            params:
-              - name: APP_IMAGE
-                type: string
-              - name: BUILDER_IMAGE
-                type: string
-              - name: SOURCE_SUBPATH
-                type: string
-              - name: BUILDPACK
-                type: string
             tasks:
               - name: build-task
                 taskRef:
@@ -166,13 +127,13 @@ spec:
                     workspace: source
                 params:
                   - name: APP_IMAGE
-                    value: \$(params.APP_IMAGE)
+                    value: "${app_image}"
                   - name: BUILDER_IMAGE
-                    value: \$(params.BUILDER_IMAGE)
+                    value: "${builder}"
                   - name: SOURCE_SUBPATH
-                    value: \$(params.SOURCE_SUBPATH)
+                    value: "${component}"
                   - name: BUILDPACK
-                    value: \$(params.BUILDPACK)
+                    value: "${buildpack}"
           workspaces:
             - name: source
               volumeClaimTemplate:
@@ -182,15 +143,6 @@ spec:
                   resources:
                     requests:
                       storage: 1Gi
-          params:
-            - name: APP_IMAGE
-              value: "${app_image}"
-            - name: BUILDER_IMAGE
-              value: "${builder}"
-            - name: SOURCE_SUBPATH
-              value: "${component}"
-            - name: BUILDPACK
-              value: "${buildpack}"
         EOF
           fi
         done
