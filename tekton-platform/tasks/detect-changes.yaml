@@ -1,11 +1,9 @@
+# k8s/tekton/tasks/detect-changes-task.yaml
 apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
   name: detect-changes
 spec:
-  workspaces:
-    - name: shared-workspace
-      description: Workspace containing the repository files and scripts.
   params:
     - name: gitrevision
       type: string
@@ -17,9 +15,38 @@ spec:
   steps:
     - name: run-diff-and-dispatch
       image: alpine/git:v2.30.2
-      workingDir: $(workspaces.shared-workspace.path)
-      env:
-        - name: RESULT_PATH
-          value: $(results.changed-components.path)
       script: |
-        sh $(workspaces.shared-workspace.path)/tekton-platform/scripts/detect-changes.sh
+        #!/bin/sh
+        git clone $(params.gitrepositoryurl) repo && cd repo
+        git checkout $(params.gitrevision) || {
+          git fetch origin $(params.gitrevision) && git checkout FETCH_HEAD
+        }
+
+        # Dynamically discover all components containing a README.md file with 'pack build' inside
+        MODULES=""
+        for readme in $(find . -name "README.md" | grep -v "^./README.md$"); do
+          if grep -q "pack build" "${readme}"; then
+            dir=$(dirname "${readme}" | sed 's|^\./||')
+            MODULES="${MODULES} ${dir}"
+          fi
+        done
+
+        CHANGED_COMPONENTS=""
+        for dir in ${MODULES}; do
+          if git diff-tree --no-commit-id --name-only -r HEAD | grep -q "^${dir}/"; then
+            CHANGED_COMPONENTS="${CHANGED_COMPONENTS} ${dir}"
+          fi
+        done
+
+        if [ -z "${CHANGED_COMPONENTS}" ]; then
+          echo "[NO-OP] No buildpack-ready components changed."
+          echo -n "" > $(results.changed-components.path)
+          exit 0
+        fi
+
+        CHANGED_COMPONENTS=$(echo "${CHANGED_COMPONENTS}" | xargs)
+        echo -n "${CHANGED_COMPONENTS}" > $(results.changed-components.path)
+
+        for component in ${CHANGED_COMPONENTS}; do
+          echo "Dispatched PipelineRun for component: ${component}"
+        done

@@ -18,7 +18,4 @@ cat <<EOF | kubectl apply -f -
         value: "refs/pull/2/head"
       - name: gitrepositoryurl
         value: "https://github.com/khanhcmlab/saritasa-devops-build-samples"
-    workspaces:
-      - name: shared-workspace
-        emptyDir: {}
 EOF

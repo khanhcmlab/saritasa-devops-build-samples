@@ -6,13 +6,12 @@ This directory contains the Tekton CI/CD pipeline configuration designed to auto
 
 *   **`base/`**: Holds RBAC permissions, service accounts, and webhook secret manifests.
 *   **`pipelines/`**: Defines the central orchestrator pipeline (`orchestrator-pipeline.yaml`).
-*   **`tasks/`**: Declares individual Tekton tasks. The task scripts have been refactored into external shell scripts for clean development and testing.
-*   **`scripts/`**: Contains the shell scripts executed by the tasks (called dynamically from the pipeline's workspace):
-    *   `check-concurrency.sh`: Prevents multiple concurrent runs by queueing runs in order of their creation timestamp.
-    *   `detect-changes.sh`: Scans the repository to identify components (subdirectories containing a `README.md` with a `pack build` instruction) and detects which components changed in the git revision.
-    *   `dispatch-pipeline-runs.sh`: Reads configuration parameters for changed components and dispatches individual `PipelineRun` builders.
-    *   `buildpack-build.sh`: Runs the actual `pack build` process with custom builder images, buildpacks, env parameters, and descriptors.
-    *   `patch-deployment.sh`: Patches the Kubernetes deployment container and monitors the rollout to completion.
+*   **`tasks/`**: Declares individual Tekton tasks containing their inline script logic:
+    *   `check-concurrency.yaml`: Prevents multiple concurrent runs by queueing runs in order of their creation timestamp.
+    *   `detect-changes.yaml`: Scans the repository to identify components (subdirectories containing a `README.md` with a `pack build` instruction) and detects which components changed in the git revision.
+    *   `dispatch-pipeline-runs.yaml`: Reads configuration parameters for changed components and dispatches individual `PipelineRun` builders.
+    *   `buildpack-build.yaml`: Runs the actual `pack build` process with custom builder images, buildpacks, env parameters, and descriptors.
+    *   `patch-deployment.yaml`: Patches the Kubernetes deployment container and monitors the rollout to completion.
 *   **`triggers/`**: Configures EventListeners, TriggerBindings, and TriggerTemplates to trigger builds automatically via Git webhooks.
 *   **`tests/`**: Includes helper shell scripts to test and run mock pipelineruns.
 
@@ -68,4 +67,4 @@ bash tekton-platform/tests/mock-parallel-pipeline-run.sh
 
 Build configurations are maintained directly inside the component directories:
 1.  **Component Detection**: Any new subdirectory with a `README.md` containing `pack build` is automatically registered as a component at runtime.
-2.  **Build Customization**: To change builder images, environment variables, or descriptors for a component, update its `README.md` commands. The configuration is hardcoded in the `dispatch-pipeline-runs.sh` script to parse and translate these parameters into Tekton resources.
+2.  **Build Customization**: To change builder images, environment variables, or descriptors for a component, update its `README.md` commands. The configuration is hardcoded in the `dispatch-pipeline-runs.yaml` task to parse and translate these parameters into Tekton resources.

@@ -26,9 +26,6 @@ spec:
       value: "${REVISION}"
     - name: gitrepositoryurl
       value: "${REPOSITORY}"
-  workspaces:
-    - name: shared-workspace
-      emptyDir: {}
 EOF
   # Introduce a small delay to guarantee distinct creation timestamps
   sleep 2

@@ -29,7 +29,5 @@ spec:
             value: $(tt.params.gitrepositoryurl)
           - name: action
             value: $(tt.params.action)
-        workspaces:
-          - name: shared-workspace
-            emptyDir: {}
+
 
