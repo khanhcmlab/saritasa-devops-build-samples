@@ -1,0 +1,21 @@
+# k8s/tekton/tasks/check-concurrency-task.yaml
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: check-concurrency
+spec:
+  workspaces:
+    - name: shared-workspace
+      description: Workspace containing the scripts.
+  params:
+    - name: pipelinerun-name
+      type: string
+      default: ""
+  steps:
+    - name: check-concurrency
+      image: alpine/k8s:1.20.4
+      env:
+        - name: PIPELINERUN_NAME
+          value: $(params.pipelinerun-name)
+      script: |
+        sh $(workspaces.shared-workspace.path)/tekton-platform/scripts/check-concurrency.sh

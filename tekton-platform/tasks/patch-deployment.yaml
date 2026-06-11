@@ -7,6 +7,9 @@ spec:
   description: >-
     Patches a Kubernetes Deployment with a new image tag (typically the commit SHA)
     and monitors the rollout to completion.
+  workspaces:
+    - name: source
+      description: Workspace containing the application source code and scripts.
   params:
     - name: DEPLOYMENT_NAME
       type: string
@@ -28,18 +31,16 @@ spec:
   steps:
     - name: patch-deployment
       image: alpine/k8s:1.20.4
+      env:
+        - name: DEPLOYMENT_NAME
+          value: $(params.DEPLOYMENT_NAME)
+        - name: CONTAINER_NAME
+          value: $(params.CONTAINER_NAME)
+        - name: IMAGE_NAME
+          value: $(params.IMAGE_NAME)
+        - name: TAG
+          value: $(params.TAG)
+        - name: NAMESPACE
+          value: $(params.NAMESPACE)
       script: |
-        #!/bin/sh
-        set -e
-
-        echo "Patching deployment '$(params.DEPLOYMENT_NAME)' in namespace '$(params.NAMESPACE)'..."
-        echo "Setting image for container '$(params.CONTAINER_NAME)' to '$(params.IMAGE_NAME):$(params.TAG)'..."
-
-        # Update the deployment's container image
-        kubectl set image deployment/$(params.DEPLOYMENT_NAME) \
-          $(params.CONTAINER_NAME)=$(params.IMAGE_NAME):$(params.TAG) \
-          -n $(params.NAMESPACE)
-
-        # Monitor and verify the rollout status
-        echo "Waiting for rollout to complete..."
-        kubectl rollout status deployment/$(params.DEPLOYMENT_NAME) -n $(params.NAMESPACE)
+        sh $(workspaces.source.path)/tekton-platform/scripts/patch-deployment.sh

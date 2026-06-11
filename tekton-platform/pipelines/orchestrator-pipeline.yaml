@@ -15,20 +15,53 @@ spec:
       type: string
       description: The action to perform (build or deploy).
       default: "build"
+  workspaces:
+    - name: shared-workspace
+      description: The workspace where the repository is cloned and scripts are accessed.
   tasks:
+    - name: git-clone
+      taskRef:
+        name: git-clone
+      workspaces:
+        - name: output
+          workspace: shared-workspace
+      params:
+        - name: url
+          value: $(params.gitrepositoryurl)
+        - name: revision
+          value: $(params.gitrevision)
+    - name: check-concurrency
+      runAfter:
+        - git-clone
+      taskRef:
+        name: check-concurrency
+      workspaces:
+        - name: shared-workspace
+          workspace: shared-workspace
+      params:
+        - name: pipelinerun-name
+          value: $(context.pipelineRun.name)
     - name: detect-changes
+      runAfter:
+        - check-concurrency
       taskRef:
         name: detect-changes
+      workspaces:
+        - name: shared-workspace
+          workspace: shared-workspace
       params:
         - name: gitrevision
           value: $(params.gitrevision)
         - name: gitrepositoryurl
           value: $(params.gitrepositoryurl)
-        - name: pipelinerun-name
-          value: $(context.pipelineRun.name)
     - name: dispatch-pipeline-runs
       runAfter:
         - detect-changes
+      taskRef:
+        name: dispatch-pipeline-runs
+      workspaces:
+        - name: shared-workspace
+          workspace: shared-workspace
       params:
         - name: changed-components
           value: $(tasks.detect-changes.results.changed-components)
@@ -36,5 +69,5 @@ spec:
           value: $(params.action)
         - name: gitrevision
           value: $(params.gitrevision)
-      taskRef:
-        name: dispatch-pipeline-runs
+        - name: gitrepositoryurl
+          value: $(params.gitrepositoryurl)

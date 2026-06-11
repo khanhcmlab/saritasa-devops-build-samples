@@ -1,8 +1,5 @@
 RUN_NAME="orchestrator-pipelinerun-pr-mock-${i}-$(date +%s)"
-echo "Creating PipelineRun: ${RUN_NAME}.
-
-# For push events, the revision is typically the branch name or commit SHA. For pull request events, the revision is often in the format refs/pull/<PR_NUMBER>/head."
-
+echo "Creating PipelineRun: ${RUN_NAME}"
 cat <<EOF | kubectl apply -f -
   apiVersion: tekton.dev/v1beta1
   kind: PipelineRun
@@ -18,4 +15,7 @@ cat <<EOF | kubectl apply -f -
         value: "refs/pull/2/head"
       - name: gitrepositoryurl
         value: "https://github.com/khanhcmlab/saritasa-devops-build-samples"
+    workspaces:
+      - name: shared-workspace
+        emptyDir: {}
 EOF
