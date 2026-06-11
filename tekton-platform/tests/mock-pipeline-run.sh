@@ -1,7 +1,7 @@
-RUN_NAME="orchestrator-pipelinerun-pr-mock-${i}-$(date +%s)"
-echo "Creating PipelineRun: ${RUN_NAME}.
+RUN_NAME="orchestrator-pipelinerun-pr-mock-$(date +%s)"
+echo "Creating PipelineRun: ${RUN_NAME}."
 
-# For push events, the revision is typically the branch name or commit SHA. For pull request events, the revision is often in the format refs/pull/<PR_NUMBER>/head."
+# For push events, the revision is typically the branch name or commit SHA. For pull request events, the revision is often in the format refs/pull/<PR_NUMBER>/head.
 
 cat <<EOF | kubectl apply -f -
   apiVersion: tekton.dev/v1beta1
@@ -18,4 +18,7 @@ cat <<EOF | kubectl apply -f -
         value: "refs/pull/2/head"
       - name: gitrepositoryurl
         value: "https://github.com/khanhcmlab/saritasa-devops-build-samples"
+    workspaces:
+      - name: shared-workspace
+        emptyDir: {}
 EOF

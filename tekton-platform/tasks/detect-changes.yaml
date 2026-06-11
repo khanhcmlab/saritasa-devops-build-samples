@@ -1,4 +1,3 @@
-# k8s/tekton/tasks/detect-changes-task.yaml
 apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
