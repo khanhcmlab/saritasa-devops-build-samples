@@ -316,8 +316,9 @@ spec:
             - name: source
               volumeClaimTemplate:
                 spec:
+                  storageClassName: nfs-rwx
                   accessModes:
-                    - ReadWriteOnce
+                    - ReadWriteMany
                   resources:
                     requests:
                       storage: 1Gi
@@ -369,8 +370,9 @@ spec:
             - name: source
               volumeClaimTemplate:
                 spec:
+                  storageClassName: nfs-rwx
                   accessModes:
-                    - ReadWriteOnce
+                    - ReadWriteMany
                   resources:
                     requests:
                       storage: 1Gi
