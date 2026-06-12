@@ -15,6 +15,9 @@ spec:
       type: string
       description: The action to perform (build or deploy).
       default: "build"
+  workspaces:
+    - name: source-workspace
+      description: Shared workspace for cloning, change detection, and building.
   tasks:
     - name: check-concurrency
       taskRef:
@@ -22,27 +25,70 @@ spec:
       params:
         - name: pipelinerun-name
           value: $(context.pipelineRun.name)
-    - name: detect-changes
+    - name: git-clone
       runAfter:
         - check-concurrency
+      taskRef:
+        name: git-clone
+      workspaces:
+        - name: output
+          workspace: source-workspace
+      params:
+        - name: url
+          value: "$(params.gitrepositoryurl)"
+        - name: revision
+          value: "$(params.gitrevision)"
+        - name: deleteExisting
+          value: "true"
+    - name: detect-changes
+      runAfter:
+        - git-clone
+      workspaces:
+        - name: source
+          workspace: source-workspace
       taskRef:
         name: detect-changes
       params:
         - name: gitrevision
-          value: $(params.gitrevision)
-        - name: gitrepositoryurl
-          value: $(params.gitrepositoryurl)
-    - name: dispatch-pipeline-runs
+          value: "$(params.gitrevision)"
+    - name: buildpacks
       runAfter:
         - detect-changes
+      when:
+        - input: "$(tasks.detect-changes.results.should-build)"
+          operator: in
+          values: ["true"]
       taskRef:
-        name: dispatch-pipeline-runs
+        name: buildpacks-phases
+      workspaces:
+        - name: source
+          workspace: source-workspace
       params:
-        - name: changed-components
-          value: $(tasks.detect-changes.results.changed-components)
-        - name: action
-          value: $(params.action)
-        - name: gitrevision
-          value: $(params.gitrevision)
-        - name: gitrepositoryurl
-          value: $(params.gitrepositoryurl)
+        - name: APP_IMAGE
+          value: "$(tasks.detect-changes.results.image)"
+        - name: SOURCE_SUBPATH
+          value: "$(tasks.detect-changes.results.source-subpath)"
+        - name: CNB_BUILDER_IMAGE
+          value: "$(tasks.detect-changes.results.builder)"
+    - name: patch-deployment
+      runAfter:
+        - buildpacks
+      when:
+        - input: "$(params.action)"
+          operator: in
+          values: ["deploy"]
+        - input: "$(tasks.detect-changes.results.should-build)"
+          operator: in
+          values: ["true"]
+      taskRef:
+        name: patch-deployment
+      workspaces:
+        - name: source
+          workspace: source-workspace
+      params:
+        - name: DEPLOYMENT_NAME
+          value: "$(tasks.detect-changes.results.component-name)"
+        - name: IMAGE_NAME
+          value: "$(tasks.detect-changes.results.image)"
+        - name: TAG
+          value: "$(params.gitrevision)"

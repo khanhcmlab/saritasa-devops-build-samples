@@ -21,6 +21,16 @@ spec:
   serviceAccountName: pipeline-service-account
   pipelineRef:
     name: orchestrator-pipeline
+  workspaces:
+    - name: source-workspace
+      volumeClaimTemplate:
+        spec:
+          storageClassName: nfs-rwx
+          accessModes:
+            - ReadWriteMany
+          resources:
+            requests:
+              storage: 1Gi
   params:
     - name: gitrevision
       value: "${REVISION}"
