@@ -5,26 +5,6 @@ metadata:
 spec:
   serviceAccountName: pipeline-service-account
   triggers:
-    - name: pull-request-trigger
-      interceptors:
-        - ref:
-            name: "github"
-          params:
-            - name: "secretRef"
-              value:
-                secretName: "github-webhook-secret"
-                secretKey: "token"
-            - name: "eventTypes"
-              value: ["pull_request"]
-        - ref:
-            name: "cel"
-          params:
-            - name: "filter"
-              value: "body.action == 'opened' || body.action == 'synchronize' || body.action == 'reopened'"
-      bindings:
-        - ref: github-pr-binding
-      template:
-        ref: trigger-template
     - name: merge-main-trigger
       interceptors:
         - ref:

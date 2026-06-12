@@ -34,7 +34,7 @@ spec:
                   - ReadWriteMany
                 resources:
                   requests:
-                    storage: 1Gi
+                    storage: 5Gi
         params:
           - name: gitrevision
             value: $(tt.params.gitrevision)
