@@ -263,7 +263,7 @@ spec:
           namespace: saritasa-test
         spec:
           serviceAccountName: pipeline-service-account
-          taskSpec:
+          pipelineSpec:
             workspaces:
               - name: source
             tasks:
@@ -331,7 +331,7 @@ spec:
           namespace: saritasa-test
         spec:
           serviceAccountName: pipeline-service-account
-          taskSpec:
+          pipelineSpec:
             workspaces:
               - name: source
             tasks:
