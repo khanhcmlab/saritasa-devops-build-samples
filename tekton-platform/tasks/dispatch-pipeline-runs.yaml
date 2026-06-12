@@ -255,7 +255,7 @@ spec:
           echo "Dispatching PipelineRun for ${component} with action ${ACTION}..."
           
           if [ "${ACTION}" = "deploy" ]; then
-            cat <<EOF | kubectl apply -f -
+            cat <<EOF | kubectl create -f -
         apiVersion: tekton.dev/v1beta1
         kind: PipelineRun
         metadata:
@@ -323,7 +323,7 @@ spec:
                       storage: 1Gi
         EOF
           else
-            cat <<EOF | kubectl apply -f -
+            cat <<EOF | kubectl create -f -
         apiVersion: tekton.dev/v1beta1
         kind: PipelineRun
         metadata:
