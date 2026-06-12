@@ -21,6 +21,9 @@ spec:
   serviceAccountName: pipeline-service-account
   pipelineRef:
     name: orchestrator-pipeline
+  podTemplate:
+    nodeSelector:
+      node: hp
   workspaces:
     - name: source-workspace
       volumeClaimTemplate:

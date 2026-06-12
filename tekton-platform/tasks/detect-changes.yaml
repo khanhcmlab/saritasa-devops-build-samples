@@ -8,6 +8,10 @@ spec:
     - name: gitrevision
       type: string
       description: The git revision/sha to build.
+    - name: registry-path
+      type: string
+      description: The target docker registry path.
+      default: "ghcr.io/dewwripper"
   workspaces:
     - name: source
       description: Workspace containing the cloned repository.
@@ -43,7 +47,9 @@ spec:
         # Find the first component that has changed in the latest commit
         CHANGED_COMPONENT=""
         for dir in ${MODULES}; do
+          echo "Checking if component '${dir}' has changes in $(params.gitrevision)..."
           if git diff-tree --no-commit-id --name-only -r HEAD | grep -q "^${dir}/"; then
+            echo "Found changed component: '${dir}'"
             CHANGED_COMPONENT="${dir}"
             break
           fi
@@ -66,7 +72,7 @@ spec:
         # Sanitize gitrevision for image tag
         tag="$(params.gitrevision)"
         clean_tag=$(echo "${tag}" | tr '/' '-')
-        image="ghcr.io/saritasa-test/${clean_name}:${clean_tag}"
+        image="$(params.registry-path)/${clean_name}:${clean_tag}"
         echo -n "${image}" > $(results.image.path)
 
         # Initialize default config values

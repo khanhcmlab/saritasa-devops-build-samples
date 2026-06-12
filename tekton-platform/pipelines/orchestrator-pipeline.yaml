@@ -15,6 +15,10 @@ spec:
       type: string
       description: The action to perform (build or deploy).
       default: "build"
+    - name: registry-path
+      type: string
+      description: The target docker registry path.
+      default: "ghcr.io/dewwripper"
   workspaces:
     - name: source-workspace
       description: Shared workspace for cloning, change detection, and building.
@@ -40,6 +44,8 @@ spec:
           value: "$(params.gitrevision)"
         - name: deleteExisting
           value: "true"
+        - name: depth
+          value: "2"
     - name: detect-changes
       runAfter:
         - git-clone
@@ -51,6 +57,8 @@ spec:
       params:
         - name: gitrevision
           value: "$(params.gitrevision)"
+        - name: registry-path
+          value: "$(params.registry-path)"
     - name: buildpacks
       runAfter:
         - detect-changes
