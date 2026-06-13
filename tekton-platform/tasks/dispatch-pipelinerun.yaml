@@ -1,0 +1,64 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: dispatch-pipelinerun
+  namespace: saritasa-test
+spec:
+  params:
+    - name: COMPONENT
+      type: string
+    - name: gitrevision
+      type: string
+    - name: gitrepositoryurl
+      type: string
+    - name: registry-path
+      type: string
+    - name: action
+      type: string
+  steps:
+    - name: dispatch
+      image: alpine/k8s:1.20.4
+      script: |
+        #!/bin/sh
+        set -e
+
+        # Clean name for generateName (replace / with -)
+        COMPONENT_CLEAN=$(echo "$(params.COMPONENT)" | tr '/' '-')
+
+        echo "Dispatching PipelineRun for component: $(params.COMPONENT) (clean name: ${COMPONENT_CLEAN})"
+
+        cat <<EOF | kubectl apply -f -
+        apiVersion: tekton.dev/v1beta1
+        kind: PipelineRun
+        metadata:
+          generateName: ${COMPONENT_CLEAN}-pipelinerun-
+          namespace: saritasa-test
+        spec:
+          serviceAccountName: pipeline-service-account
+          pipelineRef:
+            name: component-pipeline
+          podTemplate:
+            nodeSelector:
+              node: hp
+          workspaces:
+            - name: source-workspace
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: nfs-rwx
+                  accessModes:
+                    - ReadWriteMany
+                  resources:
+                    requests:
+                      storage: 5Gi
+          params:
+            - name: component
+              value: "$(params.COMPONENT)"
+            - name: gitrevision
+              value: "$(params.gitrevision)"
+            - name: gitrepositoryurl
+              value: "$(params.gitrepositoryurl)"
+            - name: registry-path
+              value: "$(params.registry-path)"
+            - name: action
+              value: "$(params.action)"
+        EOF

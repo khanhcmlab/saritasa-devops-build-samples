@@ -26,6 +26,8 @@ spec:
       description: "Builder image to use"
     - name: image
       description: "Target image name to build"
+    - name: changed-modules-json
+      description: "JSON array of changed modules"
   steps:
     - name: run-diff-and-configure
       image: alpine/git:v2.30.2

@@ -1,0 +1,86 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: component-pipeline
+  namespace: saritasa-test
+spec:
+  params:
+    - name: component
+      type: string
+    - name: gitrevision
+      type: string
+    - name: gitrepositoryurl
+      type: string
+    - name: registry-path
+      type: string
+    - name: action
+      type: string
+      default: "build"
+  workspaces:
+    - name: source-workspace
+      description: Workspace where source code is cloned and built.
+  tasks:
+    - name: git-clone
+      taskRef:
+        name: git-clone
+      workspaces:
+        - name: output
+          workspace: source-workspace
+      params:
+        - name: url
+          value: "$(params.gitrepositoryurl)"
+        - name: revision
+          value: "$(params.gitrevision)"
+        - name: deleteExisting
+          value: "true"
+        - name: depth
+          value: "2"
+    - name: configure-component
+      runAfter:
+        - git-clone
+      workspaces:
+        - name: source
+          workspace: source-workspace
+      taskRef:
+        name: configure-component
+      params:
+        - name: gitrevision
+          value: "$(params.gitrevision)"
+        - name: registry-path
+          value: "$(params.registry-path)"
+        - name: component
+          value: "$(params.component)"
+    - name: buildpacks
+      runAfter:
+        - configure-component
+      taskRef:
+        name: buildpacks-phases
+      workspaces:
+        - name: source
+          workspace: source-workspace
+      params:
+        - name: APP_IMAGE
+          value: "$(tasks.configure-component.results.image)"
+        - name: SOURCE_SUBPATH
+          value: "$(tasks.configure-component.results.source-subpath)"
+        - name: CNB_BUILDER_IMAGE
+          value: "$(tasks.configure-component.results.builder)"
+    - name: patch-deployment
+      runAfter:
+        - buildpacks
+      when:
+        - input: "$(params.action)"
+          operator: in
+          values: ["deploy"]
+      taskRef:
+        name: patch-deployment
+      workspaces:
+        - name: source
+          workspace: source-workspace
+      params:
+        - name: DEPLOYMENT_NAME
+          value: "$(tasks.configure-component.results.component-name)"
+        - name: IMAGE_NAME
+          value: "$(params.registry-path)/$(tasks.configure-component.results.component-name)"
+        - name: TAG
+          value: "$(tasks.configure-component.results.image-tag)"
