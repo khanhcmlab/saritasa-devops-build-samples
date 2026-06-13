@@ -35,291 +35,135 @@ spec:
 
         cd $(workspaces.source.path)
 
-        # Discover all components in the repo that have a README.md containing 'pack build'
+        # Create list of all components by finding README.md files that contain "pack build" command
         MODULES=""
-        for readme in $(find . -name "README.md" | grep -v "^./README.md$"); do
+        for readme in $(find . -prune -o -name "README.md" -print | grep -v "^./README.md$"); do
           if grep -q "pack build" "${readme}"; then
             dir=$(dirname "${readme}" | sed 's|^\./||')
             MODULES="${MODULES} ${dir}"
           fi
         done
 
-        # Find the first component that has changed in the latest commit
+        # Check for changes in any of the component directories
         CHANGED_COMPONENT=""
+        GIT_CHANGES=$(git diff-tree --no-commit-id --name-only -r -m HEAD)
         for dir in ${MODULES}; do
-          echo "Checking if component '${dir}' has changes in $(params.gitrevision)..."
-          if git diff-tree --no-commit-id --name-only -r HEAD | grep -q "^${dir}/"; then
+          echo "Checking if component '${dir}' has changes..."
+          if echo "${GIT_CHANGES}" | grep -q "^${dir}/"; then
             echo "Found changed component: '${dir}'"
-            CHANGED_COMPONENT="${dir}"
-            break
+            CHANGED_COMPONENTS="${CHANGED_COMPONENTS} ${dir}"
           fi
         done
 
-        if [ -z "${CHANGED_COMPONENT}" ]; then
+        # Trim leading space from the list of changed components
+        CHANGED_COMPONENTS=$(echo "${CHANGED_COMPONENTS}" | sed 's/^ //')
+
+        # If no components have changed, set should-build to false and exit
+        if [ -z "${CHANGED_COMPONENTS}" ]; then
           echo "No buildpack-ready components changed."
-          echo -n "false" > $(results.should-build.path)
+          echo -n "false" > "$(results.should-build.path)"
           exit 0
         fi
 
-        echo "Detected changed component: ${CHANGED_COMPONENT}"
-        echo -n "true" > $(results.should-build.path)
-        echo -n "${CHANGED_COMPONENT}" > $(results.source-subpath.path)
+        
+        # Announce that we will build if there are any changed components
+        echo -n "true" > "$(results.should-build.path)"
+        echo "List of components to build:${CHANGED_COMPONENTS}"
 
-        # Clean name for deployment
-        clean_name=$(echo "${CHANGED_COMPONENT}" | tr '/' '-')
-        echo -n "${clean_name}" > $(results.component-name.path)
+        # Loop through changed components and set results for the first one (for simplicity)
+        for component in ${CHANGED_COMPONENTS}; do
+          echo "------------------------------------------------------------"
+          echo "Processing pipeline configurations for: ${COMPONENT}"
+          echo "------------------------------------------------------------"
 
-        # Sanitize gitrevision for image tag
-        tag="$(params.gitrevision)"
-        clean_tag=$(echo "${tag}" | tr '/' '-')
-        image="$(params.registry-path)/${clean_name}:${clean_tag}"
-        echo -n "${image}" > $(results.image.path)
+          clean_name=$(echo "${COMPONENT}" | tr '/' '-')
 
-        # Initialize default config values
-        builder="paketobuildpacks/builder-jammy-base:latest"
-        buildpack=""
-        additional_args=""
-        descriptor=""
-        source_subpath="${CHANGED_COMPONENT}"
+          tag="$(params.gitrevision)"
+          clean_tag=$(echo "${tag}" | tr '/' '-')
+          image="$(params.registry-path)/${clean_name}:${clean_tag}"
 
-        case "${CHANGED_COMPONENT}" in
-          "ca-certificates/ca-certificates-sample")
-            buildpack="paketo-buildpacks/go"
-            ;;
-          "dotnet-core/aspnet")
-            buildpack="paketo-buildpacks/dotnet-core"
-            ;;
-          "dotnet-core/fdd-app")
-            buildpack="paketo-buildpacks/dotnet-core"
-            ;;
-          "dotnet-core/fde-app")
-            buildpack="paketo-buildpacks/dotnet-core"
-            ;;
-          "dotnet-core/runtime")
-            buildpack="paketo-buildpacks/dotnet-core"
-            ;;
-          "dotnet-core/self-contained-deployment")
-            buildpack="paketo-buildpacks/dotnet-core"
-            ;;
-          "git/git-sample")
-            buildpack="paketo-buildpacks/git"
-            source_subpath="git/git-sample/app"
-            ;;
-          "go/mod")
-            buildpack="paketo-buildpacks/go"
-            ;;
-          "go/no-imports")
-            buildpack="paketo-buildpacks/go"
-            ;;
-          "java/akka")
-            additional_args="--env BP_JVM_VERSION=11"
-            ;;
-          "java/application-insights")
-            additional_args="--env BP_JVM_VERSION=17"
-            ;;
-          "java/aspectj")
-            additional_args="--env BP_JVM_VERSION=17"
-            ;;
-          "java/deps")
-            additional_args="--env BP_JVM_VERSION=11"
-            ;;
-          "java/dist-zip")
-            additional_args='--env BP_GRADLE_BUILD_ARGUMENTS="--no-daemon -x test bootDistZip" --env BP_GRADLE_BUILT_ARTIFACT="build/distributions/*.zip" --env BP_JVM_VERSION=17'
-            ;;
-          "java/jar")
-            additional_args="--env BP_JVM_VERSION=17"
-            ;;
-          "java/java-node/gradle-node")
-            builder="paketobuildpacks/builder-jammy-base"
-            additional_args="--env BP_JVM_VERSION=21 --env BP_JAVA_INSTALL_NODE=true --env BP_NODE_PROJECT_PATH=frontend"
-            ;;
-          "java/java-node/maven-yarn")
-            additional_args="--env BP_JVM_VERSION=17 --env BP_JAVA_INSTALL_NODE=true"
-            ;;
-          "java/kotlin")
-            additional_args="--env BP_JVM_VERSION=17"
-            ;;
-          "java/leiningen")
-            additional_args="--env BP_JVM_VERSION=11"
-            ;;
-          "java/native-image/quarkus-native-image-maven")
-            builder="paketobuildpacks/builder-jammy-tiny"
-            additional_args='--env BP_NATIVE_IMAGE=true --env BP_MAVEN_ADDITIONAL_BUILD_ARGUMENTS="-Dquarkus.package.type=native-sources" --env BP_MAVEN_BUILT_ARTIFACT="target/native-sources" --env BP_NATIVE_IMAGE_BUILD_ARGUMENTS_FILE="native-sources/native-image.args" --env BP_NATIVE_IMAGE_BUILT_ARTIFACT="native-sources/*-runner.jar" --env BP_JVM_VERSION=21'
-            ;;
-          "java/native-image/spring-boot-native-image-gradle")
-            builder="paketobuildpacks/builder-jammy-tiny"
-            additional_args="--env BP_NATIVE_IMAGE=true"
-            ;;
-          "java/native-image/spring-boot-native-image-maven")
-            builder="paketobuildpacks/builder-jammy-tiny"
-            additional_args='--env BP_NATIVE_IMAGE=true --env BP_MAVEN_BUILD_ARGUMENTS="-Dmaven.test.skip=true --no-transfer-progress package -Pnative" --env BP_JVM_VERSION=17'
-            ;;
-          "java/opentelemetry")
-            additional_args="--buildpack paketo-buildpacks/java --buildpack docker.io/paketobuildpacks/opentelemetry --env BP_OPENTELEMETRY_ENABLED=true --env BP_JVM_VERSION=17"
-            ;;
-          "java/war-spring")
-            additional_args="--env BP_JVM_VERSION=17 --env BP_TOMCAT_VERSION=10"
-            ;;
-          "nodejs/angular-npm")
-            buildpack="paketo-buildpacks/nodejs"
-            additional_args='--env BP_NODE_RUN_SCRIPTS=build --env NODE_ENV=development'
-            ;;
-          "nodejs/no-package-manager")
-            buildpack="paketo-buildpacks/nodejs"
-            ;;
-          "nodejs/npm")
-            buildpack="paketo-buildpacks/nodejs"
-            ;;
-          "nodejs/react-yarn")
-            buildpack="paketo-buildpacks/nodejs"
-            additional_args='--env BP_NODE_RUN_SCRIPTS=build'
-            ;;
-          "nodejs/vue-npm")
-            buildpack="paketo-buildpacks/nodejs"
-            additional_args='--env BP_NODE_RUN_SCRIPTS=build --env NODE_ENV=development'
-            ;;
-          "nodejs/yarn")
-            buildpack="paketo-buildpacks/nodejs"
-            ;;
-          "php/app_with_extensions")
-            buildpack="paketo-buildpacks/php"
-            builder="paketobuildpacks/builder-jammy-full"
-            ;;
-          "php/builtin-server")
-            buildpack="paketo-buildpacks/php"
-            builder="paketobuildpacks/builder-jammy-full"
-            ;;
-          "php/composer")
-            buildpack="paketo-buildpacks/php"
-            builder="paketobuildpacks/builder-jammy-full"
-            additional_args="--env BP_PHP_WEB_DIR=htdocs"
-            ;;
-          "php/composer_with_extensions")
-            buildpack="paketo-buildpacks/php"
-            builder="paketobuildpacks/builder-jammy-full"
-            ;;
-          "php/httpd")
-            buildpack="paketo-buildpacks/php"
-            builder="paketobuildpacks/builder-jammy-full"
-            ;;
-          "php/memcached_session_handler")
-            buildpack="paketo-buildpacks/php"
-            builder="paketobuildpacks/builder-jammy-full"
-            additional_args="--env BP_PHP_WEB_DIR=htdocs --env SERVICE_BINDING_ROOT=/bindings"
-            ;;
-          "php/nginx")
-            buildpack="paketo-buildpacks/php"
-            builder="paketobuildpacks/builder-jammy-full"
-            ;;
-          "php/redis_session_handler")
-            buildpack="paketo-buildpacks/php"
-            builder="paketobuildpacks/builder-jammy-full"
-            additional_args="--env BP_PHP_WEB_DIR=htdocs --env SERVICE_BINDING_ROOT=/bindings"
-            ;;
-          "python/conda")
-            buildpack="paketo-buildpacks/python"
-            ;;
-          "python/no_package_manager")
-            buildpack="paketo-buildpacks/python"
-            ;;
-          "python/pip")
-            buildpack="paketo-buildpacks/python"
-            ;;
-          "python/pipenv")
-            buildpack="paketo-buildpacks/python"
-            ;;
-          "python/poetry")
-            buildpack="paketo-buildpacks/python"
-            ;;
-          "python/poetry-run")
-            buildpack="paketo-buildpacks/python"
-            ;;
-          "ruby/passenger")
-            buildpack="paketo-buildpacks/ruby"
-            ;;
-          "ruby/puma")
-            buildpack="paketo-buildpacks/ruby"
-            ;;
-          "ruby/rackup")
-            buildpack="paketo-buildpacks/ruby"
-            ;;
-          "ruby/rails_assets")
-            buildpack="paketo-buildpacks/ruby"
-            ;;
-          "ruby/rake")
-            buildpack="paketo-buildpacks/ruby"
-            ;;
-          "ruby/thin")
-            buildpack="paketo-buildpacks/ruby"
-            ;;
-          "ruby/unicorn")
-            buildpack="paketo-buildpacks/ruby"
-            ;;
-          "web-servers/angular-nginx-sample")
-            buildpack="paketo-buildpacks/web-servers"
-            additional_args="--env BP_NODE_RUN_SCRIPTS=build --env BP_WEB_SERVER=nginx --env BP_WEB_SERVER_ROOT=dist/my-project-name --env BP_WEB_SERVER_ENABLE_PUSH_STATE=true"
-            ;;
-          "web-servers/httpd-sample")
-            buildpack="paketo-buildpacks/httpd"
-            builder="paketobuildpacks/builder-jammy-full:latest"
-            ;;
-          "web-servers/nginx-sample")
-            buildpack="paketo-buildpacks/nginx"
-            ;;
-          "web-servers/react-frontend-sample")
-            buildpack="paketo-buildpacks/web-servers"
-            additional_args="--env BP_NODE_RUN_SCRIPTS=build --env BP_WEB_SERVER=httpd --env BP_WEB_SERVER_ROOT=build --env BP_WEB_SERVER_ENABLE_PUSH_STATE=true"
-            ;;
-        esac
+          echo "Target Image: ${image}"
 
-        # Output source-subpath update if needed
-        echo -n "${source_subpath}" > $(results.source-subpath.path)
+          builder="paketobuildpacks/builder-jammy-base:latest"
+          buildpack=""
+          declare -a additional_args=()
+          descriptor=""
+          source_subpath="${COMPONENT}"
+          
+          # Tech stack is determined by the first segment of the component path (e.g., "go" for "go/hello-world")
+          TECH_STACK="${COMPONENT%%/*}"
 
-        # Prepare path to component directory
-        path_to_app="$(workspaces.source.path)/${source_subpath}"
+          # Map tech stack to buildpack and builder, with special handling for web-servers group and Java versions
+          case "${TECH_STACK}" in
+            ca-certificates) buildpack="paketo-buildpacks/go" ;;
+            web-servers)     # Special handling for web-servers group
+              if [ "${COMPONENT}" = "web-servers/httpd-sample" ]; then buildpack="paketo-buildpacks/httpd"; builder="paketobuildpacks/builder-jammy-full:latest"
+              elif [ "${COMPONENT}" = "web-servers/nginx-sample" ]; then buildpack="paketo-buildpacks/nginx"
+              else buildpack="paketo-buildpacks/web-servers"; fi ;;
+            *)               # All other languages (go, nodejs, python, ruby, php, dotnet-core) follow this pattern
+              buildpack="paketo-buildpacks/${TECH_STACK}" ;;
+          esac
 
-        if [ "${CHANGED_COMPONENT}" = "web-servers/react-frontend-sample" ]; then
-          descriptor="httpd.toml"
-        fi
+          # 3. Only keep cases that require additional environment variables
+          declare -a additional_args=()
+          case "${COMPONENT}" in
+            "git/git-sample")                         source_subpath="git/git-sample/app" ;;
+            "nodejs/angular-npm" | "nodejs/vue-npm")  additional_args=(--env "BP_NODE_RUN_SCRIPTS=build" --env "NODE_ENV=development") ;;
+            "nodejs/react-yarn")                      additional_args=(--env "BP_NODE_RUN_SCRIPTS=build") ;;
+            "php/composer")                           additional_args=(--env "BP_PHP_WEB_DIR=htdocs") ;;
+            "php/memcached_session_handler" | "php/redis_session_handler") additional_args=(--env "BP_PHP_WEB_DIR=htdocs" --env "SERVICE_BINDING_ROOT=/bindings") ;;
+            "web-servers/angular-nginx-sample")       additional_args=(--env "BP_NODE_RUN_SCRIPTS=build" --env "BP_WEB_SERVER=nginx" --env "BP_WEB_SERVER_ROOT=dist/my-project-name" --env "BP_WEB_SERVER_ENABLE_PUSH_STATE=true") ;;
+            "web-servers/react-frontend-sample")      additional_args=(--env "BP_NODE_RUN_SCRIPTS=build" --env "BP_WEB_SERVER=httpd" --env "BP_WEB_SERVER_ROOT=build" --env "BP_WEB_SERVER_ENABLE_PUSH_STATE=true") ;;
+            
+            # Special handling for Java versions
+            java/akka | java/deps | java/leiningen)   additional_args=(--env "BP_JVM_VERSION=11") ;;
+            java/application-insights | java/aspectj | java/jar | java/kotlin | java/war-spring)
+              additional_args=(--env "BP_JVM_VERSION=17")
+              [ "${COMPONENT}" = "java/war-spring" ] && additional_args+=(--env "BP_TOMCAT_VERSION=10") ;;
+            java/dist-zip)                            additional_args=(--env 'BP_GRADLE_BUILD_ARGUMENTS="--no-daemon -x test bootDistZip"' --env 'BP_GRADLE_BUILT_ARTIFACT="build/distributions/*.zip"' --env "BP_JVM_VERSION=17") ;;
+            java/java-node/gradle-node)               builder="paketobuildpacks/builder-jammy-base"; additional_args=(--env "BP_JVM_VERSION=21" --env "BP_JAVA_INSTALL_NODE=true" --env "BP_NODE_PROJECT_PATH=frontend") ;;
+            java/java-node/maven-yarn)                additional_args=(--env "BP_JVM_VERSION=17" --env "BP_JAVA_INSTALL_NODE=true") ;;
+            java/native-image/quarkus-native-image-maven) builder="paketobuildpacks/builder-jammy-tiny"; additional_args=(--env "BP_NATIVE_IMAGE=true" --env 'BP_MAVEN_ADDITIONAL_BUILD_ARGUMENTS="-Dquarkus.package.type=native-sources"' --env 'BP_MAVEN_BUILT_ARTIFACT="target/native-sources"' --env 'BP_NATIVE_IMAGE_BUILD_ARGUMENTS_FILE="native-sources/native-image.args"' --env 'BP_NATIVE_IMAGE_BUILT_ARTIFACT="native-sources/*-runner.jar"' --env "BP_JVM_VERSION=21") ;;
+            java/native-image/spring-boot-native-image-gradle) builder="paketobuildpacks/builder-jammy-tiny"; additional_args=(--env "BP_NATIVE_IMAGE=true") ;;
+            java/native-image/spring-boot-native-image-maven) builder="paketobuildpacks/builder-jammy-tiny"; additional_args=(--env "BP_NATIVE_IMAGE=true" --env 'BP_MAVEN_BUILD_ARGUMENTS="-Dmaven.test.skip=true --no-transfer-progress package -Pnative"' --env "BP_JVM_VERSION=17") ;;
+            java/opentelemetry)                       additional_args=(--buildpack "paketo-buildpacks/java" --buildpack "docker.io/paketobuildpacks/opentelemetry" --env "BP_OPENTELEMETRY_ENABLED=true" --env "BP_JVM_VERSION=17") ;;
+          esac
 
-        if [ -n "${descriptor}" ] && [ -f "${path_to_app}/${descriptor}" ]; then
-          echo "Copying descriptor ${descriptor} to project.toml..."
-          cp "${path_to_app}/${descriptor}" "${path_to_app}/project.toml"
-        else
-          # Generate custom project.toml directly in the source directory
-          toml_content=""
-          if [ -n "${buildpack}" ]; then
-            toml_content="[[build.buildpacks]]\nid = \"${buildpack}\"\n"
-          fi
+          path_to_app="$(workspaces.source.path)/${source_subpath}"
 
-          is_env=false
-          is_buildpack=false
-          for arg in ${additional_args}; do
-            if [ "${arg}" = "--env" ]; then
-              is_env=true
-            elif [ "${arg}" = "--buildpack" ]; then
-              is_buildpack=true
-            elif [ "${is_env}" = true ]; then
-              clean_arg=$(echo "${arg}" | sed 's/^"//;s/"$//;s/^\x27//;s/\x27$//')
-              key=$(echo "${clean_arg}" | cut -d'=' -f1)
-              val=$(echo "${clean_arg}" | cut -d'=' -f2-)
-              toml_content="${toml_content}[[build.env]]\nname = \"${key}\"\nvalue = \"${val}\"\n"
-              is_env=false
-            elif [ "${is_buildpack}" = true ]; then
-              clean_bp=$(echo "${arg}" | sed 's/^"//;s/"$//;s/^\x27//;s/\x27$//')
-              toml_content="${toml_content}[[build.buildpacks]]\nid = \"${clean_bp}\"\n"
-              is_buildpack=false
+          if [ "${COMPONENT}" = "web-servers/react-frontend-sample" ] && [ -f "${path_to_app}/httpd.toml" ]; then
+            echo "Copying descriptor httpd.toml to project.toml..."
+            cp "${path_to_app}/httpd.toml" "${path_to_app}/project.toml"
+          else
+            toml_content=""
+            if [ -n "${buildpack}" ]; then
+              toml_content="[[build.buildpacks]]\nid = \"${buildpack}\"\n"
             fi
-          done
+            set -- "${additional_args[@]}"
+            while [ $# -gt 0 ]; do
+              case "$1" in 
+                --env)
+                  arg="$2"; shift
+                  arg="${arg#[\"\']}"; arg="${arg%[\"\']}"
+                  key="${arg%%=*}"
+                  val="${arg#*=}"
+                  toml_content="${toml_content}[[build.env]]\nname = \"${key}\"\nvalue = \"${val}\"\n"
+                  ;;
+                --buildpack)
+                  bp="$2"; shift
+                  bp="${bp#[\"\']}"; bp="${bp%[\"\']}"
+                  toml_content="${toml_content}[[build.buildpacks]]\nid = \"${bp}\"\n"
+                  ;;
+              esac
+              shift
+            done
 
-          if [ -n "${toml_content}" ]; then
-            echo "Writing custom project.toml..."
-            mkdir -p "${path_to_app}"
-            printf "${toml_content}" > "${path_to_app}/project.toml"
-            echo "Generated project.toml content:"
-            cat "${path_to_app}/project.toml"
+            if [ -n "${toml_content}" ]; then
+              echo "Writing custom project.toml for ${COMPONENT}..."
+              mkdir -p "${path_to_app}"
+              printf "${toml_content}" > "${path_to_app}/project.toml"
+            fi
           fi
-        fi
 
-        # Output remaining results
-        echo -n "${builder}" > $(results.builder.path)
+          echo -n "${builder}" > $(results.builder.path)
+        done

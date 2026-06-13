@@ -1,15 +1,3 @@
-apiVersion: triggers.tekton.dev/v1alpha1
-kind: TriggerBinding
-metadata:
-  name: github-pr-binding
-spec:
-  params:
-    - name: gitrevision
-      value: $(body.pull_request.head.sha)
-    - name: gitrepositoryurl
-      value: $(body.repository.url)
-    - name: action
-      value: "build"
 ---
 apiVersion: triggers.tekton.dev/v1alpha1
 kind: TriggerBinding
