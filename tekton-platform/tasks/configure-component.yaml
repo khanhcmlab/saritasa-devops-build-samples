@@ -29,6 +29,8 @@ spec:
       description: "Target image name to build"
     - name: image-tag
       description: "Sanitized tag used for the image"
+    - name: process-type
+      description: "Default process type for the component (e.g. web or binary name)"
   steps:
     - name: configure
       image: alpine/git:v2.30.2
@@ -191,3 +193,10 @@ spec:
 
         # Output remaining results
         echo -n "${builder}" > $(results.builder.path)
+
+        # Output process-type result
+        PROCESS_TYPE="web"
+        if [ "${TECH_STACK}" = "go" ] || [ "${TECH_STACK}" = "ca-certificates" ]; then
+          PROCESS_TYPE="${CHANGED_COMPONENT##*/}"
+        fi
+        echo -n "${PROCESS_TYPE}" > $(results.process-type.path)

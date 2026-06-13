@@ -68,6 +68,8 @@ spec:
           value: "$(tasks.configure-component.results.source-subpath)"
         - name: CNB_BUILDER_IMAGE
           value: "$(tasks.configure-component.results.builder)"
+        - name: CNB_PROCESS_TYPE
+          value: "$(tasks.configure-component.results.process-type)"
     - name: patch-deployment
       runAfter:
         - buildpacks
