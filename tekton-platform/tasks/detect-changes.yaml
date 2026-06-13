@@ -27,6 +27,7 @@ spec:
     - name: image
       description: "Target image name to build"
     - name: changed-modules-json
+      type: array
       description: "JSON array of changed modules"
   steps:
     - name: run-diff-and-configure
@@ -39,11 +40,11 @@ spec:
 
         # Create list of all components by finding README.md files that contain "pack build" command
         MODULES=""
-        for readme in $(find . -prune -o -name "README.md" -print | grep -v "^./README.md$"); do
-            if grep -q "pack build" "${readme}"; then
+        for readme in $(find . -name "README.md" | grep -v "^./README.md$"); do
+          if grep -q "pack build" "${readme}"; then
             dir=$(dirname "${readme}" | sed 's|^\./||')
             MODULES="${MODULES} ${dir}"
-            fi
+          fi
         done
 
         # Check for changes in any of the component directories
