@@ -73,8 +73,6 @@ spec:
       taskRef:
         name: dispatch-pipelinerun
       params:
-        - name: COMPONENT
-          value: $(matrix.COMPONENT)
         - name: gitrevision
           value: "$(params.gitrevision)"
         - name: gitrepositoryurl

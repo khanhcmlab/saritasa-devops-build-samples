@@ -5,6 +5,7 @@ metadata:
   namespace: saritasa-test
 secrets:
   - name: ghcr-creds
+  - name: github-auth
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
