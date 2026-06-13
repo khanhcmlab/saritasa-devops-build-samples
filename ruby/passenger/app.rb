@@ -5,3 +5,5 @@ class ExampleApp < Sinatra::Base
     erb :index
   end
 end
+
+# trigger test

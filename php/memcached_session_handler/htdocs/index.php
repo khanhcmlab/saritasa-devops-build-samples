@@ -19,3 +19,5 @@ $_SESSION['count'] = ++$count;
 ?>
   </body>
 </html>
+
+// trigger test

@@ -10,3 +10,5 @@
   :main ^:skip-aot lein-source.server
   :profiles {:uberjar {:aot :all
                        :jvm-opts ["-Dclojure.compiler.direct-linking=true"]}})
+
+;; trigger test

@@ -10,3 +10,5 @@ os.chdir(web_dir)
 Handler = http.server.SimpleHTTPRequestHandler
 httpd = socketserver.TCPServer(("", PORT), Handler)
 httpd.serve_forever()
+
+# trigger test

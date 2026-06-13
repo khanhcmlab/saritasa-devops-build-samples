@@ -119,3 +119,5 @@ func testMavenWithBuilder(builder string) func(*testing.T, spec.G, spec.S) {
 		})
 	}
 }
+
+// trigger test

@@ -21,3 +21,5 @@ exclude = [
   [[ build.env ]]
     name="BP_WEB_SERVER_ENABLE_PUSH_STATE"
     value="true"
+
+# trigger test

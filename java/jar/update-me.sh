@@ -23,3 +23,5 @@ rsync -arv --delete ../maven/target/demo/* ./
 
 # change line endings
 vim META-INF/MANIFEST.MF -c "set ff=unix" -c ":wq"
+
+# trigger test

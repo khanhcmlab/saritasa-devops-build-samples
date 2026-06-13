@@ -119,3 +119,5 @@ func testApplicationInsightsWithBuilders(builder string) func(*testing.T, spec.G
 		})
 	}
 }
+
+// trigger test
