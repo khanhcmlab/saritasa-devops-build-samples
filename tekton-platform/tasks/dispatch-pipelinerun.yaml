@@ -22,10 +22,15 @@ spec:
         #!/bin/sh
         set -e
 
-        # Clean name for generateName (replace / with -)
-        COMPONENT_CLEAN=$(echo "$(params.COMPONENT)" | tr '/' '-')
+        PARAM_COMPONENT="$(params.COMPONENT)"
+        PARAM_GITREVISION="$(params.gitrevision)"
+        PARAM_GITURL="$(params.gitrepositoryurl)"
+        PARAM_REGISTRY="$(params.registry-path)"
+        PARAM_ACTION="$(params.action)"
 
-        echo "Dispatching PipelineRun for component: $(params.COMPONENT) (clean name: ${COMPONENT_CLEAN})"
+        COMPONENT_CLEAN=$(echo "$PARAM_COMPONENT" | tr '/' '-')
+
+        echo "Dispatching PipelineRun for component: ${PARAM_COMPONENT} (clean name: ${COMPONENT_CLEAN})"
 
         cat <<EOF | kubectl apply -f -
         apiVersion: tekton.dev/v1beta1
@@ -52,13 +57,13 @@ spec:
                       storage: 5Gi
           params:
             - name: component
-              value: "$(params.COMPONENT)"
+              value: "${PARAM_COMPONENT}"
             - name: gitrevision
-              value: "$(params.gitrevision)"
+              value: "${PARAM_GITREVISION}"
             - name: gitrepositoryurl
-              value: "$(params.gitrepositoryurl)"
+              value: "${PARAM_GITURL}"
             - name: registry-path
-              value: "$(params.registry-path)"
+              value: "${PARAM_REGISTRY}"
             - name: action
-              value: "$(params.action)"
+              value: "${PARAM_ACTION}"
         EOF
