@@ -59,44 +59,8 @@ spec:
           value: "$(params.gitrevision)"
         - name: registry-path
           value: "$(params.registry-path)"
-    - name: buildpacks
-      runAfter:
-        - detect-changes
-      when:
-        - input: "$(tasks.detect-changes.results.should-build)"
-          operator: in
-          values: ["true"]
-      taskRef:
-        name: buildpacks-phases
-      workspaces:
-        - name: source
-          workspace: source-workspace
-      params:
-        - name: APP_IMAGE
-          value: "$(tasks.detect-changes.results.image)"
-        - name: SOURCE_SUBPATH
-          value: "$(tasks.detect-changes.results.source-subpath)"
-        - name: CNB_BUILDER_IMAGE
-          value: "$(tasks.detect-changes.results.builder)"
-    - name: patch-deployment
-      runAfter:
-        - buildpacks
-      when:
-        - input: "$(params.action)"
-          operator: in
-          values: ["deploy"]
-        - input: "$(tasks.detect-changes.results.should-build)"
-          operator: in
-          values: ["true"]
-      taskRef:
-        name: patch-deployment
-      workspaces:
-        - name: source
-          workspace: source-workspace
-      params:
-        - name: DEPLOYMENT_NAME
-          value: "$(tasks.detect-changes.results.component-name)"
-        - name: IMAGE_NAME
-          value: "$(tasks.detect-changes.results.image)"
-        - name: TAG
-          value: "$(params.gitrevision)"
+
+      
+
+
+  

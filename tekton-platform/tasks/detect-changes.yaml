@@ -38,21 +38,21 @@ spec:
         # Create list of all components by finding README.md files that contain "pack build" command
         MODULES=""
         for readme in $(find . -prune -o -name "README.md" -print | grep -v "^./README.md$"); do
-          if grep -q "pack build" "${readme}"; then
+            if grep -q "pack build" "${readme}"; then
             dir=$(dirname "${readme}" | sed 's|^\./||')
             MODULES="${MODULES} ${dir}"
-          fi
+            fi
         done
 
         # Check for changes in any of the component directories
         CHANGED_COMPONENT=""
         GIT_CHANGES=$(git diff-tree --no-commit-id --name-only -r -m HEAD)
         for dir in ${MODULES}; do
-          echo "Checking if component '${dir}' has changes..."
-          if echo "${GIT_CHANGES}" | grep -q "^${dir}/"; then
+            echo "Checking if component '${dir}' has changes..."
+            if echo "${GIT_CHANGES}" | grep -q "^${dir}/"; then
             echo "Found changed component: '${dir}'"
             CHANGED_COMPONENTS="${CHANGED_COMPONENTS} ${dir}"
-          fi
+            fi
         done
 
         # Trim leading space from the list of changed components
@@ -60,110 +60,15 @@ spec:
 
         # If no components have changed, set should-build to false and exit
         if [ -z "${CHANGED_COMPONENTS}" ]; then
-          echo "No buildpack-ready components changed."
-          echo -n "false" > "$(results.should-build.path)"
-          exit 0
+            echo "No buildpack-ready components changed."
+            echo -n "false" > "$(results.should-build.path)"
+            exit 0
         fi
 
-        
+
         # Announce that we will build if there are any changed components
         echo -n "true" > "$(results.should-build.path)"
         echo "List of components to build:${CHANGED_COMPONENTS}"
 
-        # Loop through changed components and set results for the first one (for simplicity)
-        for component in ${CHANGED_COMPONENTS}; do
-          echo "------------------------------------------------------------"
-          echo "Processing pipeline configurations for: ${COMPONENT}"
-          echo "------------------------------------------------------------"
-
-          clean_name=$(echo "${COMPONENT}" | tr '/' '-')
-
-          tag="$(params.gitrevision)"
-          clean_tag=$(echo "${tag}" | tr '/' '-')
-          image="$(params.registry-path)/${clean_name}:${clean_tag}"
-
-          echo "Target Image: ${image}"
-
-          builder="paketobuildpacks/builder-jammy-base:latest"
-          buildpack=""
-          declare -a additional_args=()
-          descriptor=""
-          source_subpath="${COMPONENT}"
-          
-          # Tech stack is determined by the first segment of the component path (e.g., "go" for "go/hello-world")
-          TECH_STACK="${COMPONENT%%/*}"
-
-          # Map tech stack to buildpack and builder, with special handling for web-servers group and Java versions
-          case "${TECH_STACK}" in
-            ca-certificates) buildpack="paketo-buildpacks/go" ;;
-            web-servers)     # Special handling for web-servers group
-              if [ "${COMPONENT}" = "web-servers/httpd-sample" ]; then buildpack="paketo-buildpacks/httpd"; builder="paketobuildpacks/builder-jammy-full:latest"
-              elif [ "${COMPONENT}" = "web-servers/nginx-sample" ]; then buildpack="paketo-buildpacks/nginx"
-              else buildpack="paketo-buildpacks/web-servers"; fi ;;
-            *)               # All other languages (go, nodejs, python, ruby, php, dotnet-core) follow this pattern
-              buildpack="paketo-buildpacks/${TECH_STACK}" ;;
-          esac
-
-          # 3. Only keep cases that require additional environment variables
-          declare -a additional_args=()
-          case "${COMPONENT}" in
-            "git/git-sample")                         source_subpath="git/git-sample/app" ;;
-            "nodejs/angular-npm" | "nodejs/vue-npm")  additional_args=(--env "BP_NODE_RUN_SCRIPTS=build" --env "NODE_ENV=development") ;;
-            "nodejs/react-yarn")                      additional_args=(--env "BP_NODE_RUN_SCRIPTS=build") ;;
-            "php/composer")                           additional_args=(--env "BP_PHP_WEB_DIR=htdocs") ;;
-            "php/memcached_session_handler" | "php/redis_session_handler") additional_args=(--env "BP_PHP_WEB_DIR=htdocs" --env "SERVICE_BINDING_ROOT=/bindings") ;;
-            "web-servers/angular-nginx-sample")       additional_args=(--env "BP_NODE_RUN_SCRIPTS=build" --env "BP_WEB_SERVER=nginx" --env "BP_WEB_SERVER_ROOT=dist/my-project-name" --env "BP_WEB_SERVER_ENABLE_PUSH_STATE=true") ;;
-            "web-servers/react-frontend-sample")      additional_args=(--env "BP_NODE_RUN_SCRIPTS=build" --env "BP_WEB_SERVER=httpd" --env "BP_WEB_SERVER_ROOT=build" --env "BP_WEB_SERVER_ENABLE_PUSH_STATE=true") ;;
-            
-            # Special handling for Java versions
-            java/akka | java/deps | java/leiningen)   additional_args=(--env "BP_JVM_VERSION=11") ;;
-            java/application-insights | java/aspectj | java/jar | java/kotlin | java/war-spring)
-              additional_args=(--env "BP_JVM_VERSION=17")
-              [ "${COMPONENT}" = "java/war-spring" ] && additional_args+=(--env "BP_TOMCAT_VERSION=10") ;;
-            java/dist-zip)                            additional_args=(--env 'BP_GRADLE_BUILD_ARGUMENTS="--no-daemon -x test bootDistZip"' --env 'BP_GRADLE_BUILT_ARTIFACT="build/distributions/*.zip"' --env "BP_JVM_VERSION=17") ;;
-            java/java-node/gradle-node)               builder="paketobuildpacks/builder-jammy-base"; additional_args=(--env "BP_JVM_VERSION=21" --env "BP_JAVA_INSTALL_NODE=true" --env "BP_NODE_PROJECT_PATH=frontend") ;;
-            java/java-node/maven-yarn)                additional_args=(--env "BP_JVM_VERSION=17" --env "BP_JAVA_INSTALL_NODE=true") ;;
-            java/native-image/quarkus-native-image-maven) builder="paketobuildpacks/builder-jammy-tiny"; additional_args=(--env "BP_NATIVE_IMAGE=true" --env 'BP_MAVEN_ADDITIONAL_BUILD_ARGUMENTS="-Dquarkus.package.type=native-sources"' --env 'BP_MAVEN_BUILT_ARTIFACT="target/native-sources"' --env 'BP_NATIVE_IMAGE_BUILD_ARGUMENTS_FILE="native-sources/native-image.args"' --env 'BP_NATIVE_IMAGE_BUILT_ARTIFACT="native-sources/*-runner.jar"' --env "BP_JVM_VERSION=21") ;;
-            java/native-image/spring-boot-native-image-gradle) builder="paketobuildpacks/builder-jammy-tiny"; additional_args=(--env "BP_NATIVE_IMAGE=true") ;;
-            java/native-image/spring-boot-native-image-maven) builder="paketobuildpacks/builder-jammy-tiny"; additional_args=(--env "BP_NATIVE_IMAGE=true" --env 'BP_MAVEN_BUILD_ARGUMENTS="-Dmaven.test.skip=true --no-transfer-progress package -Pnative"' --env "BP_JVM_VERSION=17") ;;
-            java/opentelemetry)                       additional_args=(--buildpack "paketo-buildpacks/java" --buildpack "docker.io/paketobuildpacks/opentelemetry" --env "BP_OPENTELEMETRY_ENABLED=true" --env "BP_JVM_VERSION=17") ;;
-          esac
-
-          path_to_app="$(workspaces.source.path)/${source_subpath}"
-
-          if [ "${COMPONENT}" = "web-servers/react-frontend-sample" ] && [ -f "${path_to_app}/httpd.toml" ]; then
-            echo "Copying descriptor httpd.toml to project.toml..."
-            cp "${path_to_app}/httpd.toml" "${path_to_app}/project.toml"
-          else
-            toml_content=""
-            if [ -n "${buildpack}" ]; then
-              toml_content="[[build.buildpacks]]\nid = \"${buildpack}\"\n"
-            fi
-            set -- "${additional_args[@]}"
-            while [ $# -gt 0 ]; do
-              case "$1" in 
-                --env)
-                  arg="$2"; shift
-                  arg="${arg#[\"\']}"; arg="${arg%[\"\']}"
-                  key="${arg%%=*}"
-                  val="${arg#*=}"
-                  toml_content="${toml_content}[[build.env]]\nname = \"${key}\"\nvalue = \"${val}\"\n"
-                  ;;
-                --buildpack)
-                  bp="$2"; shift
-                  bp="${bp#[\"\']}"; bp="${bp%[\"\']}"
-                  toml_content="${toml_content}[[build.buildpacks]]\nid = \"${bp}\"\n"
-                  ;;
-              esac
-              shift
-            done
-
-            if [ -n "${toml_content}" ]; then
-              echo "Writing custom project.toml for ${COMPONENT}..."
-              mkdir -p "${path_to_app}"
-              printf "${toml_content}" > "${path_to_app}/project.toml"
-            fi
-          fi
-
-          echo -n "${builder}" > $(results.builder.path)
-        done
+        json_array=$(echo "${CHANGED_COMPONENTS}" | awk '{printf "["; for(i=1;i<=NF;i++) printf "\"%s\"%s", $i, (i==NF?"":","); printf "]"}' )
+        echo -n "${json_array}" > $(results.changed-modules-json.path)
