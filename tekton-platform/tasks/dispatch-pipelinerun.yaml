@@ -32,7 +32,7 @@ spec:
 
         echo "Dispatching PipelineRun for component: ${PARAM_COMPONENT} (clean name: ${COMPONENT_CLEAN})"
 
-        cat <<EOF | kubectl apply -f -
+        cat <<EOF | kubectl create -f -
         apiVersion: tekton.dev/v1beta1
         kind: PipelineRun
         metadata:

@@ -58,6 +58,9 @@ spec:
       workspaces:
         - name: source
           workspace: source-workspace
+        - name: cache
+          workspace: source-workspace
+          subPath: cache/$(params.component)
       params:
         - name: APP_IMAGE
           value: "$(tasks.configure-component.results.image)"

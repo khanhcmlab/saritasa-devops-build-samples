@@ -28,7 +28,7 @@ cat <<EOF | kubectl apply -f -
                 storage: 1Gi
     params:
       - name: gitrevision
-        value: "feature/test-ci-trigger"
+        value: "feature/test-ci-cd-2-changes"
       - name: gitrepositoryurl
         value: "https://github.com/khanhcmlab/saritasa-devops-build-samples"
 EOF
