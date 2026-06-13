@@ -30,5 +30,7 @@ cat <<EOF | kubectl apply -f -
       - name: gitrevision
         value: "feature/test-ci-cd-2-changes"
       - name: gitrepositoryurl
-        value: "https://github.com/khanhcmlab/saritasa-devops-build-samples"
+        value: "https://github.com/khanhcmlab/saritasa-devops-build-samples" 
+      - name: action
+        value: "deploy"
 EOF

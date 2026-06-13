@@ -197,6 +197,6 @@ spec:
         # Output process-type result
         PROCESS_TYPE="web"
         if [ "${TECH_STACK}" = "go" ] || [ "${TECH_STACK}" = "ca-certificates" ]; then
-          PROCESS_TYPE="${CHANGED_COMPONENT##*/}"
+          PROCESS_TYPE="workspace"
         fi
         echo -n "${PROCESS_TYPE}" > $(results.process-type.path)
