@@ -3,6 +3,7 @@ apiVersion: triggers.tekton.dev/v1alpha1
 kind: TriggerBinding
 metadata:
   name: github-merge-binding
+  namespace: saritasa-test
 spec:
   params:
     - name: gitrevision
