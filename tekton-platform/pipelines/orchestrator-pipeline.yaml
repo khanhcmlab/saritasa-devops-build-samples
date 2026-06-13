@@ -42,8 +42,6 @@ spec:
           value: "$(params.gitrepositoryurl)"
         - name: revision
           value: "$(params.gitrevision)"
-        - name: deleteExisting
-          value: "true"
         - name: depth
           value: "2"
     - name: detect-changes

@@ -79,28 +79,65 @@ spec:
         esac
 
         # Only keep cases that require additional environment variables
-        declare -a additional_args=()
+        set --
         case "${CHANGED_COMPONENT}" in
-        "git/git-sample")                         source_subpath="git/git-sample/app" ;;
-        "nodejs/angular-npm" | "nodejs/vue-npm")  additional_args=(--env "BP_NODE_RUN_SCRIPTS=build" --env "NODE_ENV=development") ;;
-        "nodejs/react-yarn")                      additional_args=(--env "BP_NODE_RUN_SCRIPTS=build") ;;
-        "php/composer")                           additional_args=(--env "BP_PHP_WEB_DIR=htdocs") ;;
-        "php/memcached_session_handler" | "php/redis_session_handler") additional_args=(--env "BP_PHP_WEB_DIR=htdocs" --env "SERVICE_BINDING_ROOT=/bindings") ;;
-        "web-servers/angular-nginx-sample")       additional_args=(--env "BP_NODE_RUN_SCRIPTS=build" --env "BP_WEB_SERVER=nginx" --env "BP_WEB_SERVER_ROOT=dist/my-project-name" --env "BP_WEB_SERVER_ENABLE_PUSH_STATE=true") ;;
-        "web-servers/react-frontend-sample")      additional_args=(--env "BP_NODE_RUN_SCRIPTS=build" --env "BP_WEB_SERVER=httpd" --env "BP_WEB_SERVER_ROOT=build" --env "BP_WEB_SERVER_ENABLE_PUSH_STATE=true") ;;
+        "git/git-sample")
+            source_subpath="git/git-sample/app"
+            ;;
+        "nodejs/angular-npm" | "nodejs/vue-npm")
+            set -- --env "BP_NODE_RUN_SCRIPTS=build" --env "NODE_ENV=development"
+            ;;
+        "nodejs/react-yarn")
+            set -- --env "BP_NODE_RUN_SCRIPTS=build"
+            ;;
+        "php/composer")
+            set -- --env "BP_PHP_WEB_DIR=htdocs"
+            ;;
+        "php/memcached_session_handler" | "php/redis_session_handler")
+            set -- --env "BP_PHP_WEB_DIR=htdocs" --env "SERVICE_BINDING_ROOT=/bindings"
+            ;;
+        "web-servers/angular-nginx-sample")
+            set -- --env "BP_NODE_RUN_SCRIPTS=build" --env "BP_WEB_SERVER=nginx" --env "BP_WEB_SERVER_ROOT=dist/my-project-name" --env "BP_WEB_SERVER_ENABLE_PUSH_STATE=true"
+            ;;
+        "web-servers/react-frontend-sample")
+            set -- --env "BP_NODE_RUN_SCRIPTS=build" --env "BP_WEB_SERVER=httpd" --env "BP_WEB_SERVER_ROOT=build" --env "BP_WEB_SERVER_ENABLE_PUSH_STATE=true"
+            ;;
         
         # Special handling for Java versions
-        java/akka | java/deps | java/leiningen)   additional_args=(--env "BP_JVM_VERSION=11") ;;
+        java/akka | java/deps | java/leiningen)
+            set -- --env "BP_JVM_VERSION=11"
+            ;;
         java/application-insights | java/aspectj | java/jar | java/kotlin | java/war-spring)
-            additional_args=(--env "BP_JVM_VERSION=17")
-            [ "${CHANGED_COMPONENT}" = "java/war-spring" ] && additional_args+=(--env "BP_TOMCAT_VERSION=10") ;;
-        java/dist-zip)                            additional_args=(--env 'BP_GRADLE_BUILD_ARGUMENTS="--no-daemon -x test bootDistZip"' --env 'BP_GRADLE_BUILT_ARTIFACT="build/distributions/*.zip"' --env "BP_JVM_VERSION=17") ;;
-        java/java-node/gradle-node)               builder="paketobuildpacks/builder-jammy-base"; additional_args=(--env "BP_JVM_VERSION=21" --env "BP_JAVA_INSTALL_NODE=true" --env "BP_NODE_PROJECT_PATH=frontend") ;;
-        java/java-node/maven-yarn)                additional_args=(--env "BP_JVM_VERSION=17" --env "BP_JAVA_INSTALL_NODE=true") ;;
-        java/native-image/quarkus-native-image-maven) builder="paketobuildpacks/builder-jammy-tiny"; additional_args=(--env "BP_NATIVE_IMAGE=true" --env 'BP_MAVEN_ADDITIONAL_BUILD_ARGUMENTS="-Dquarkus.package.type=native-sources"' --env 'BP_MAVEN_BUILT_ARTIFACT="target/native-sources"' --env 'BP_NATIVE_IMAGE_BUILD_ARGUMENTS_FILE="native-sources/native-image.args"' --env 'BP_NATIVE_IMAGE_BUILT_ARTIFACT="native-sources/*-runner.jar"' --env "BP_JVM_VERSION=21") ;;
-        java/native-image/spring-boot-native-image-gradle) builder="paketobuildpacks/builder-jammy-tiny"; additional_args=(--env "BP_NATIVE_IMAGE=true") ;;
-        java/native-image/spring-boot-native-image-maven) builder="paketobuildpacks/builder-jammy-tiny"; additional_args=(--env "BP_NATIVE_IMAGE=true" --env 'BP_MAVEN_BUILD_ARGUMENTS="-Dmaven.test.skip=true --no-transfer-progress package -Pnative"' --env "BP_JVM_VERSION=17") ;;
-        java/opentelemetry)                       additional_args=(--buildpack "paketo-buildpacks/java" --buildpack "docker.io/paketobuildpacks/opentelemetry" --env "BP_OPENTELEMETRY_ENABLED=true" --env "BP_JVM_VERSION=17") ;;
+            set -- --env "BP_JVM_VERSION=17"
+            if [ "${CHANGED_COMPONENT}" = "java/war-spring" ]; then
+              set -- "$@" --env "BP_TOMCAT_VERSION=10"
+            fi
+            ;;
+        java/dist-zip)
+            set -- --env "BP_GRADLE_BUILD_ARGUMENTS=--no-daemon -x test bootDistZip" --env "BP_GRADLE_BUILT_ARTIFACT=build/distributions/*.zip" --env "BP_JVM_VERSION=17"
+            ;;
+        java/java-node/gradle-node)
+            builder="paketobuildpacks/builder-jammy-base"
+            set -- --env "BP_JVM_VERSION=21" --env "BP_JAVA_INSTALL_NODE=true" --env "BP_NODE_PROJECT_PATH=frontend"
+            ;;
+        java/java-node/maven-yarn)
+            set -- --env "BP_JVM_VERSION=17" --env "BP_JAVA_INSTALL_NODE=true"
+            ;;
+        java/native-image/quarkus-native-image-maven)
+            builder="paketobuildpacks/builder-jammy-tiny"
+            set -- --env "BP_NATIVE_IMAGE=true" --env "BP_MAVEN_ADDITIONAL_BUILD_ARGUMENTS=-Dquarkus.package.type=native-sources" --env "BP_MAVEN_BUILT_ARTIFACT=target/native-sources" --env "BP_NATIVE_IMAGE_BUILD_ARGUMENTS_FILE=native-sources/native-image.args" --env "BP_NATIVE_IMAGE_BUILT_ARTIFACT=native-sources/*-runner.jar" --env "BP_JVM_VERSION=21"
+            ;;
+        java/native-image/spring-boot-native-image-gradle)
+            builder="paketobuildpacks/builder-jammy-tiny"
+            set -- --env "BP_NATIVE_IMAGE=true"
+            ;;
+        java/native-image/spring-boot-native-image-maven)
+            builder="paketobuildpacks/builder-jammy-tiny"
+            set -- --env "BP_NATIVE_IMAGE=true" --env "BP_MAVEN_BUILD_ARGUMENTS=-Dmaven.test.skip=true --no-transfer-progress package -Pnative" --env "BP_JVM_VERSION=17"
+            ;;
+        java/opentelemetry)
+            set -- --buildpack "paketo-buildpacks/java" --buildpack "docker.io/paketobuildpacks/opentelemetry" --env "BP_OPENTELEMETRY_ENABLED=true" --env "BP_JVM_VERSION=17"
+            ;;
         esac
 
         # Output source-subpath update if needed
@@ -125,7 +162,7 @@ spec:
 
           is_env=false
           is_buildpack=false
-          for arg in ${additional_args}; do
+          for arg in "$@"; do
             if [ "${arg}" = "--env" ]; then
               is_env=true
             elif [ "${arg}" = "--buildpack" ]; then
