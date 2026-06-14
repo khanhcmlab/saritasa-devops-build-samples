@@ -38,12 +38,38 @@ spec:
 
         cd $(workspaces.source.path)
 
-        # Create list of all components by finding README.md files that contain "pack build" command
+        # Find all modules (directories containing code/projects buildable by pack build)
+        # excluding tekton-platform, tests, scripts, kubernetes, kustomize, and docker
         MODULES=""
-        for readme in $(find . -name "README.md" | grep -v "^./README.md$"); do
-          if grep -q "pack build" "${readme}"; then
-            dir=$(dirname "${readme}" | sed 's|^\./||')
-            MODULES="${MODULES} ${dir}"
+        for dir in *; do
+          if [ -d "${dir}" ]; then
+            case "${dir}" in
+              tekton-platform|tests|scripts|kubernetes|kustomize|docker)
+                continue
+                ;;
+            esac
+
+            if [ "${dir}" = "java" ]; then
+              for javadir in java/*; do
+                if [ -d "${javadir}" ]; then
+                  if [ "${javadir}" = "java/java-node" ] || [ "${javadir}" = "java/native-image" ]; then
+                    for subjavadir in ${javadir}/*; do
+                      if [ -d "${subjavadir}" ]; then
+                        MODULES="${MODULES} ${subjavadir}"
+                      fi
+                    done
+                  else
+                    MODULES="${MODULES} ${javadir}"
+                  fi
+                fi
+              done
+            else
+              for subdir in ${dir}/*; do
+                if [ -d "${subdir}" ]; then
+                  MODULES="${MODULES} ${subdir}"
+                fi
+              done
+            fi
           fi
         done
 
