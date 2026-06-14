@@ -15,7 +15,7 @@ require("@rails/ujs").start()
 
 window.onload = function(event) {
   var div = document.createElement('div');
-  div.innerText = "And hello from Javascript!";
+  div.innerText = "And hello from Javascript!!";
 
   var body = document.querySelector('body');
   body.appendChild(div);
