@@ -35,13 +35,19 @@ spec:
         #!/bin/sh
         set -e
 
-        echo "Patching deployment '$(params.DEPLOYMENT_NAME)' in namespace '$(params.NAMESPACE)'..."
-        echo "Setting image for container '$(params.CONTAINER_NAME)' to '$(params.IMAGE_NAME):$(params.TAG)'..."
+        if ! kubectl get deployment $(params.DEPLOYMENT_NAME) -n $(params.NAMESPACE) >/dev/null 2>&1; then
+          echo "Deployment '$(params.DEPLOYMENT_NAME)' does not exist in namespace '$(params.NAMESPACE)'. Creating it..."
+          kubectl create deployment $(params.DEPLOYMENT_NAME) --image=$(params.IMAGE_NAME):$(params.TAG) -n $(params.NAMESPACE)
+          kubectl patch deployment $(params.DEPLOYMENT_NAME) -n $(params.NAMESPACE) --type='json' -p="[{\"op\": \"replace\", \"path\": \"/spec/template/spec/containers/0/name\", \"value\": \"$(params.CONTAINER_NAME)\"}, {\"op\": \"add\", \"path\": \"/spec/template/spec/imagePullSecrets\", \"value\": [{\"name\": \"ghcr-creds\"}]}, {\"op\": \"add\", \"path\": \"/spec/template/spec/serviceAccountName\", \"value\": \"pipeline-service-account\"}]"
+        else
+          echo "Patching deployment '$(params.DEPLOYMENT_NAME)' in namespace '$(params.NAMESPACE)'..."
+          echo "Setting image for container '$(params.CONTAINER_NAME)' to '$(params.IMAGE_NAME):$(params.TAG)'..."
 
-        # Update the deployment's container image
-        kubectl set image deployment/$(params.DEPLOYMENT_NAME) \
-          $(params.CONTAINER_NAME)=$(params.IMAGE_NAME):$(params.TAG) \
-          -n $(params.NAMESPACE)
+          # Update the deployment's container image
+          kubectl set image deployment/$(params.DEPLOYMENT_NAME) \
+            $(params.CONTAINER_NAME)=$(params.IMAGE_NAME):$(params.TAG) \
+            -n $(params.NAMESPACE)
+        fi
 
         # Monitor and verify the rollout status
         echo "Waiting for rollout to complete..."

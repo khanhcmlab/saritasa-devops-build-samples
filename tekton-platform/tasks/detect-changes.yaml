@@ -53,7 +53,16 @@ spec:
 
         GITREVISION="$(params.gitrevision)"
         git fetch origin main:refs/remotes/origin/main --depth=100 2>/dev/null || true
-        GIT_CHANGES=$(git diff --name-only origin/main...HEAD 2>/dev/null || true)
+        case "${GITREVISION}" in
+          *pull/*|*refs/pull/*)
+            echo "Revision ${GITREVISION} is a pull request. Checking changes against main branch..."
+            GIT_CHANGES=$(git diff --name-only origin/main...HEAD 2>/dev/null || true)
+            ;;
+          *)
+            echo "Revision ${GITREVISION} is a branch commit. Checking changes in the last commit..."
+            GIT_CHANGES=$(git diff-tree --no-commit-id --name-only -r -m HEAD)
+            ;;
+        esac
 
         for dir in ${MODULES}; do
             echo "Checking if component '${dir}' has changes..."

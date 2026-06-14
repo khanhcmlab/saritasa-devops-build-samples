@@ -9,6 +9,6 @@ spec:
     - name: gitrevision
       value: $(body.after)
     - name: gitrepositoryurl
-      value: $(body.repository.url)
+      value: $(body.repository.clone_url)
     - name: action
       value: "deploy"
