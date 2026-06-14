@@ -22,13 +22,6 @@ spec:
           params:
             - name: "filter"
               value: "body.ref == 'refs/heads/feature/test-ci-cd-2-changes' || body.ref == 'refs/heads/main'"
-        - ref:
-            name: "cel"
-          params:
-            - name: "filter"
-              # This filter checks if there are less than 2 PipelineRuns with the label "tekton.dev/pipeline=my-heavy-pipeline" that are not in Succeeded or Failed state. Adjust the label selector and namespace as needed.
-              value: >
-                k8s.list("tekton.dev/v1", "PipelineRun", "your-namespace", "tekton.dev/pipeline=my-heavy-pipeline").filter(pr, !pr.status.conditions.any(c, c.type == "Succeeded" || c.type == "Failed")).size() < 2
       bindings:
         - ref: github-merge-binding
       template:

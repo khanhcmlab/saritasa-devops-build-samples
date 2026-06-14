@@ -20,7 +20,15 @@ spec:
     - name: source-workspace
       description: Workspace where source code is cloned and built.
   tasks:
+    - name: check-concurrency
+      taskRef:
+        name: check-concurrency
+      params:
+        - name: pipelinerun-name
+          value: $(context.pipelineRun.name)
     - name: git-clone
+      runAfter:
+        - check-concurrency
       taskRef:
         name: git-clone
       workspaces:
