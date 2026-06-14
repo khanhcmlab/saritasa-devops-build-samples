@@ -49,7 +49,7 @@ spec:
         echo -n "${CHANGED_COMPONENT}" > $(results.source-subpath.path)
 
         # Clean name for deployment
-        clean_name=$(echo "${CHANGED_COMPONENT}" | tr '/' '-')
+        clean_name=$(echo "${CHANGED_COMPONENT}" | tr '/_' '--')
         echo -n "${clean_name}" > $(results.component-name.path)
 
         # Sanitize gitrevision for image tag
@@ -71,13 +71,13 @@ spec:
 
         # Map tech stack to buildpack and builder, with special handling for web-servers group and Java versions
         case "${TECH_STACK}" in
-        ca-certificates) buildpack="paketo-buildpacks/go" ;;
-        web-servers)     # Special handling for web-servers group
-            if [ "${CHANGED_COMPONENT}" = "web-servers/httpd-sample" ]; then buildpack="paketo-buildpacks/httpd"; builder="paketobuildpacks/builder-jammy-full:latest"
-            elif [ "${CHANGED_COMPONENT}" = "web-servers/nginx-sample" ]; then buildpack="paketo-buildpacks/nginx"
-            else buildpack="paketo-buildpacks/web-servers"; fi ;;
-        *)               # All other languages (go, nodejs, python, ruby, php, dotnet-core) follow this pattern
-            buildpack="paketo-buildpacks/${TECH_STACK}" ;;
+          ca-certificates) buildpack="paketo-buildpacks/go" ;;
+          web-servers)     # Special handling for web-servers group
+              if [ "${CHANGED_COMPONENT}" = "web-servers/httpd-sample" ]; then buildpack="paketo-buildpacks/httpd"; builder="paketobuildpacks/builder-jammy-full:latest"
+              elif [ "${CHANGED_COMPONENT}" = "web-servers/nginx-sample" ]; then buildpack="paketo-buildpacks/nginx"
+              else buildpack="paketo-buildpacks/web-servers"; fi ;;
+          *)               # All other languages (go, nodejs, python, ruby, php, dotnet-core) follow this pattern
+              buildpack="paketo-buildpacks/${TECH_STACK}" ;;
         esac
 
         # Only keep cases that require additional environment variables
@@ -148,42 +148,35 @@ spec:
         # Prepare path to component directory
         path_to_app="$(workspaces.source.path)/${source_subpath}"
 
-        if [ "${CHANGED_COMPONENT}" = "web-servers/react-frontend-sample" ]; then
-          descriptor="httpd.toml"
-        fi
-
-        if [ -n "${descriptor}" ] && [ -f "${path_to_app}/${descriptor}" ]; then
-          echo "Copying descriptor ${descriptor} to project.toml..."
-          cp "${path_to_app}/${descriptor}" "${path_to_app}/project.toml"
+        if [ "${CHANGED_COMPONENT}" = "web-servers/react-frontend-sample" ] && [ -f "${path_to_app}/httpd.toml" ]; then
+          echo "Copying descriptor httpd.toml to project.toml..."
+          cp "${path_to_app}/httpd.toml" "${path_to_app}/project.toml"
         else
-          # Generate custom project.toml directly in the source directory
           toml_content=""
           if [ -n "${buildpack}" ]; then
             toml_content="[[build.buildpacks]]\nid = \"${buildpack}\"\n"
           fi
 
-          is_env=false
-          is_buildpack=false
-          for arg in "$@"; do
-            if [ "${arg}" = "--env" ]; then
-              is_env=true
-            elif [ "${arg}" = "--buildpack" ]; then
-              is_buildpack=true
-            elif [ "${is_env}" = true ]; then
-              clean_arg=$(echo "${arg}" | sed 's/^"//;s/"$//;s/^\x27//;s/\x27$//')
-              key=$(echo "${clean_arg}" | cut -d'=' -f1)
-              val=$(echo "${clean_arg}" | cut -d'=' -f2-)
+          while [ $# -gt 0 ]; do
+            case "$1" in
+            --env)
+              arg="$2"; shift
+              arg="${arg#[\"\']}"; arg="${arg%[\"\']}"
+              key="${arg%%=*}"
+              val="${arg#*=}"
               toml_content="${toml_content}[[build.env]]\nname = \"${key}\"\nvalue = \"${val}\"\n"
-              is_env=false
-            elif [ "${is_buildpack}" = true ]; then
-              clean_bp=$(echo "${arg}" | sed 's/^"//;s/"$//;s/^\x27//;s/\x27$//')
-              toml_content="${toml_content}[[build.buildpacks]]\nid = \"${clean_bp}\"\n"
-              is_buildpack=false
-            fi
+              ;;
+            --buildpack)
+              bp="$2"; shift
+              bp="${bp#[\"\']}"; bp="${bp%[\"\']}"
+              toml_content="${toml_content}[[build.buildpacks]]\nid = \"${bp}\"\n"
+              ;;
+            esac
+            shift
           done
 
           if [ -n "${toml_content}" ]; then
-            echo "Writing custom project.toml..."
+            echo "Writing custom project.toml for ${CHANGED_COMPONENT}..."
             mkdir -p "${path_to_app}"
             printf "${toml_content}" > "${path_to_app}/project.toml"
             echo "Generated project.toml content:"

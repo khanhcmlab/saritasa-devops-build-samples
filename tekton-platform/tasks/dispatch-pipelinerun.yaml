@@ -28,7 +28,7 @@ spec:
         PARAM_REGISTRY="$(params.registry-path)"
         PARAM_ACTION="$(params.action)"
 
-        COMPONENT_CLEAN=$(echo "$PARAM_COMPONENT" | tr '/' '-')
+        COMPONENT_CLEAN=$(echo "$PARAM_COMPONENT" | tr '/_' '--')
 
         echo "Dispatching PipelineRun for component: ${PARAM_COMPONENT} (clean name: ${COMPONENT_CLEAN})"
 

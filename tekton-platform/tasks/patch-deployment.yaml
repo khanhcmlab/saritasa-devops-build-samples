@@ -38,7 +38,7 @@ spec:
         if ! kubectl get deployment $(params.DEPLOYMENT_NAME) -n $(params.NAMESPACE) >/dev/null 2>&1; then
           echo "Deployment '$(params.DEPLOYMENT_NAME)' does not exist in namespace '$(params.NAMESPACE)'. Creating it..."
           kubectl create deployment $(params.DEPLOYMENT_NAME) --image=$(params.IMAGE_NAME):$(params.TAG) -n $(params.NAMESPACE)
-          kubectl patch deployment $(params.DEPLOYMENT_NAME) -n $(params.NAMESPACE) --type='json' -p="[{\"op\": \"replace\", \"path\": \"/spec/template/spec/containers/0/name\", \"value\": \"$(params.CONTAINER_NAME)\"}, {\"op\": \"add\", \"path\": \"/spec/template/spec/imagePullSecrets\", \"value\": [{\"name\": \"ghcr-creds\"}]}, {\"op\": \"add\", \"path\": \"/spec/template/spec/serviceAccountName\", \"value\": \"pipeline-service-account\"}]"
+          kubectl patch deployment $(params.DEPLOYMENT_NAME) -n $(params.NAMESPACE) --type='json' -p="[{\"op\": \"replace\", \"path\": \"/spec/template/spec/containers/0/name\", \"value\": \"$(params.CONTAINER_NAME)\"}, {\"op\": \"add\", \"path\": \"/spec/template/spec/imagePullSecrets\", \"value\": [{\"name\": \"ghcr-creds\"}]}, {\"op\": \"add\", \"path\": \"/spec/template/spec/serviceAccountName\", \"value\": \"pipeline-service-account\"}, {\"op\": \"add\", \"path\": \"/spec/template/spec/nodeSelector\", \"value\": {\"node\": \"hp\"}}]"
         else
           echo "Patching deployment '$(params.DEPLOYMENT_NAME)' in namespace '$(params.NAMESPACE)'..."
           echo "Setting image for container '$(params.CONTAINER_NAME)' to '$(params.IMAGE_NAME):$(params.TAG)'..."
@@ -47,6 +47,9 @@ spec:
           kubectl set image deployment/$(params.DEPLOYMENT_NAME) \
             $(params.CONTAINER_NAME)=$(params.IMAGE_NAME):$(params.TAG) \
             -n $(params.NAMESPACE)
+
+          # Ensure the deployment is scheduled on the node with label node=hp
+          kubectl patch deployment $(params.DEPLOYMENT_NAME) -n $(params.NAMESPACE) -p '{"spec":{"template":{"spec":{"nodeSelector":{"node":"hp"}}}}}'
         fi
 
         # Monitor and verify the rollout status
