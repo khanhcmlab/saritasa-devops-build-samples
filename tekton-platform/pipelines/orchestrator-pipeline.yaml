@@ -54,7 +54,7 @@ spec:
         name: detect-changes
       params:
         - name: gitrevision
-          value: "$(params.gitrevision)"
+          value: "$(tasks.git-clone.results.commit)"
         - name: registry-path
           value: "$(params.registry-path)"
     - name: dispatch-pipelineruns
@@ -72,7 +72,7 @@ spec:
         name: dispatch-pipelinerun
       params:
         - name: gitrevision
-          value: "$(params.gitrevision)"
+          value: "$(tasks.git-clone.results.commit)"
         - name: gitrepositoryurl
           value: "$(params.gitrepositoryurl)"
         - name: registry-path

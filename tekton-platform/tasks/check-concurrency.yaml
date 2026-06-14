@@ -10,7 +10,7 @@ spec:
       default: ""
   steps:
     - name: check-concurrency
-      image: alpine/k8s:1.20.4
+      image: alpine/k8s:1.33.13
       script: |
         #!/bin/sh
         set -e

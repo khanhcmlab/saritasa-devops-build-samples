@@ -17,11 +17,12 @@ spec:
                 secretKey: "token"
             - name: "eventTypes"
               value: ["push"]
-        - ref:
-            name: "cel"
-          params:
-            - name: "filter"
-              value: "body.ref == 'refs/heads/feature/test-ci-cd-2-changes' || body.ref == 'refs/heads/main'"
+        # - ref:
+        #     name: "cel"
+        #   params:
+        #     - name: "filter"
+              # value: "body.ref == 'refs/heads/feature/test-ci-cd-2-changes' || body.ref == 'refs/heads/main'"
+              # value: "body.ref == 'refs/heads/main'"
       bindings:
         - ref: github-merge-binding
       template:
