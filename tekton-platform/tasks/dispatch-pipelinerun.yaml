@@ -55,6 +55,15 @@ spec:
                   resources:
                     requests:
                       storage: 5Gi
+            - name: cache
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: nfs-rwx
+                  accessModes:
+                    - ReadWriteMany
+                  resources:
+                    requests:
+                      storage: 2Gi
           params:
             - name: component
               value: "${PARAM_COMPONENT}"
