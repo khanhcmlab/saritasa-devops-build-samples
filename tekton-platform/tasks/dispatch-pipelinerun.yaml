@@ -32,44 +32,14 @@ spec:
 
         echo "Dispatching PipelineRun for component: ${PARAM_COMPONENT} (clean name: ${COMPONENT_CLEAN})"
 
-        # Generate a unique ID using date
-        UNIQUE_ID=$(date +%s%N | cut -c1-15)
-        SOURCE_PVC_NAME="${COMPONENT_CLEAN}-source-ws-${UNIQUE_ID}"
-        CACHE_PVC_NAME="${COMPONENT_CLEAN}-cache-ws-${UNIQUE_ID}"
-
         echo "Creating PVCs ${SOURCE_PVC_NAME} and ${CACHE_PVC_NAME} and PipelineRun..."
 
+
         cat <<EOF | kubectl create -f -
-        apiVersion: v1
-        kind: PersistentVolumeClaim
-        metadata:
-          name: ${SOURCE_PVC_NAME}
-          namespace: saritasa-test
-        spec:
-          accessModes:
-            - ReadWriteMany
-          storageClassName: nfs-rwx
-          resources:
-            requests:
-              storage: 5Gi
-        ---
-        apiVersion: v1
-        kind: PersistentVolumeClaim
-        metadata:
-          name: ${CACHE_PVC_NAME}
-          namespace: saritasa-test
-        spec:
-          accessModes:
-            - ReadWriteMany
-          storageClassName: nfs-rwx
-          resources:
-            requests:
-              storage: 5Gi
-        ---
         apiVersion: tekton.dev/v1beta1
         kind: PipelineRun
         metadata:
-          name: ${COMPONENT_CLEAN}-pipelinerun-${UNIQUE_ID}
+          generateName: ${COMPONENT_CLEAN}-pipelinerun-
           namespace: saritasa-test
         spec:
           serviceAccountName: pipeline-service-account
@@ -83,11 +53,23 @@ spec:
               node: hp
           workspaces:
             - name: source-workspace
-              persistentVolumeClaim:
-                claimName: ${SOURCE_PVC_NAME}
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: nfs-rwx
+                  accessModes:
+                    - ReadWriteOnce
+                  resources:
+                    requests:
+                      storage: 1Gi
             - name: cache
-              persistentVolumeClaim:
-                claimName: ${CACHE_PVC_NAME}
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: nfs-rwx
+                  accessModes:
+                    - ReadWriteOnce
+                  resources:
+                    requests:
+                      storage: 1Gi
           params:
             - name: component
               value: "${PARAM_COMPONENT}"

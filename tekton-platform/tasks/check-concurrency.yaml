@@ -1,13 +1,19 @@
-# k8s/tekton/tasks/check-concurrency-task.yaml
 apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
   name: check-concurrency
+  namespace: saritasa-test
 spec:
   params:
     - name: pipelinerun-name
       type: string
       default: ""
+    - name: max-concurrency
+      type: string
+      default: "2"
+    - name: namespace
+      type: string
+      default: "saritasa-test"
   steps:
     - name: check-concurrency
       image: alpine/k8s:1.33.13
@@ -16,8 +22,8 @@ spec:
         set -e
 
         CURRENT_RUN="$(params.pipelinerun-name)"
-        MAX_CONCURRENCY=4
-        NAMESPACE="saritasa-test"
+        MAX_CONCURRENCY="$(params.max-concurrency)"
+        NAMESPACE="$(params.namespace)"
 
         if [ -z "${CURRENT_RUN}" ]; then
           echo "No PipelineRun name provided. Skipping concurrency check."
