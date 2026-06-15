@@ -51,7 +51,7 @@ spec:
                 spec:
                   storageClassName: nfs-rwx
                   accessModes:
-                    - ReadWriteMany
+                    - ReadWriteOnce
                   resources:
                     requests:
                       storage: 5Gi
@@ -60,10 +60,10 @@ spec:
                 spec:
                   storageClassName: nfs-rwx
                   accessModes:
-                    - ReadWriteMany
+                    - ReadWriteOnce
                   resources:
                     requests:
-                      storage: 2Gi
+                      storage: 5Gi
           params:
             - name: component
               value: "${PARAM_COMPONENT}"
