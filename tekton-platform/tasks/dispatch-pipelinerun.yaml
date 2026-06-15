@@ -64,7 +64,7 @@ spec:
           storageClassName: nfs-rwx
           resources:
             requests:
-              storage: 2Gi
+              storage: 5Gi
         ---
         apiVersion: tekton.dev/v1beta1
         kind: PipelineRun
