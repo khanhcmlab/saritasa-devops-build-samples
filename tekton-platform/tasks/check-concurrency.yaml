@@ -16,7 +16,7 @@ spec:
         set -e
 
         CURRENT_RUN="$(params.pipelinerun-name)"
-        MAX_CONCURRENCY=2
+        MAX_CONCURRENCY=4
         NAMESPACE="saritasa-test"
 
         if [ -z "${CURRENT_RUN}" ]; then
