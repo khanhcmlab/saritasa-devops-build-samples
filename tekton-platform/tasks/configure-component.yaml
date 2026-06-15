@@ -176,10 +176,17 @@ spec:
           done
 
           if [ -n "${toml_content}" ]; then
-            echo "Writing custom project.toml for ${CHANGED_COMPONENT}..."
             mkdir -p "${path_to_app}"
-            printf "${toml_content}" > "${path_to_app}/project.toml"
-            echo "Generated project.toml content:"
+            if [ -f "${path_to_app}/project.toml" ]; then
+              echo "Merging custom configurations into existing project.toml for ${CHANGED_COMPONENT}..."
+              # Ensure there is a trailing newline at the end of the existing file to avoid syntax issues
+              echo "" >> "${path_to_app}/project.toml"
+              printf "${toml_content}" >> "${path_to_app}/project.toml"
+            else
+              echo "Writing custom project.toml for ${CHANGED_COMPONENT}..."
+              printf "${toml_content}" > "${path_to_app}/project.toml"
+            fi
+            echo "Final project.toml content:"
             cat "${path_to_app}/project.toml"
           fi
         fi
