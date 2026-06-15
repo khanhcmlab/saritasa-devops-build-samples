@@ -195,10 +195,10 @@ spec:
         echo -n "${builder}" > $(results.builder.path)
 
         # Output process-type result
-        PROCESS_TYPE="web"
-        if [ "${TECH_STACK}" = "go" ] || [ "${TECH_STACK}" = "ca-certificates" ]; then
-          PROCESS_TYPE="workspace"
-        elif [ "${TECH_STACK}" = "dotnet-core" ]; then
-          PROCESS_TYPE=""
-        fi
+        PROCESS_TYPE=""
+        # if [ "${TECH_STACK}" = "go" ] || [ "${TECH_STACK}" = "ca-certificates" ]; then
+        #   PROCESS_TYPE="workspace"
+        # elif [ "${TECH_STACK}" = "dotnet-core" ]; then
+        #   PROCESS_TYPE=""
+        # fi
         echo -n "${PROCESS_TYPE}" > $(results.process-type.path)
