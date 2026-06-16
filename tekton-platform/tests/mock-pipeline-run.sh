@@ -23,9 +23,9 @@ cat <<EOF | kubectl apply -f -
       - name: source-workspace
         volumeClaimTemplate:
           spec:
-            storageClassName: nfs-rwx
+            storageClassName: local-path
             accessModes:
-              - ReadWriteMany
+              - ReadWriteOnce
             resources:
               requests:
                 storage: 1Gi

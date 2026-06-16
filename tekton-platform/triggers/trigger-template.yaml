@@ -32,12 +32,12 @@ spec:
           - name: source-workspace
             volumeClaimTemplate:
               spec:
-                storageClassName: nfs-rwx
+                storageClassName: local-path
                 accessModes:
-                  - ReadWriteMany
+                  - ReadWriteOnce
                 resources:
                   requests:
-                    storage: 5Gi
+                    storage: 1Gi
         params:
           - name: gitrevision
             value: $(tt.params.gitrevision)

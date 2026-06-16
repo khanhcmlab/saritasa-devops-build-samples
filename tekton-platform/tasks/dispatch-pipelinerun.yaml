@@ -55,7 +55,7 @@ spec:
             - name: source-workspace
               volumeClaimTemplate:
                 spec:
-                  storageClassName: nfs-rwx
+                  storageClassName: local-path
                   accessModes:
                     - ReadWriteOnce
                   resources:
@@ -64,7 +64,7 @@ spec:
             - name: cache
               volumeClaimTemplate:
                 spec:
-                  storageClassName: nfs-rwx
+                  storageClassName: local-path
                   accessModes:
                     - ReadWriteOnce
                   resources:
