@@ -72,11 +72,13 @@ spec:
         # Map tech stack to buildpack and builder, with special handling for web-servers group and Java versions
         case "${TECH_STACK}" in
           ca-certificates) buildpack="paketo-buildpacks/go" ;;
+          php)             buildpack="paketo-buildpacks/php"
+                           builder="paketobuildpacks/builder-jammy-full:latest" ;;
           web-servers)     # Special handling for web-servers group
               if [ "${CHANGED_COMPONENT}" = "web-servers/httpd-sample" ]; then buildpack="paketo-buildpacks/httpd"; builder="paketobuildpacks/builder-jammy-full:latest"
               elif [ "${CHANGED_COMPONENT}" = "web-servers/nginx-sample" ]; then buildpack="paketo-buildpacks/nginx"
               else buildpack="paketo-buildpacks/web-servers"; fi ;;
-          *)               # All other languages (go, nodejs, python, ruby, php, dotnet-core) follow this pattern
+          *)               # All other languages (go, nodejs, python, ruby, dotnet-core) follow this pattern
               buildpack="paketo-buildpacks/${TECH_STACK}" ;;
         esac
 
