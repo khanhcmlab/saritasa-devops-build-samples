@@ -13,9 +13,6 @@ cat <<EOF | kubectl apply -f -
     serviceAccountName: pipeline-service-account
     pipelineRef:
       name: orchestrator-pipeline
-    timeouts:
-      pipeline: "4h0m0s"
-      tasks: "4h0m0s"
     podTemplate:
       nodeSelector:
         node: hp

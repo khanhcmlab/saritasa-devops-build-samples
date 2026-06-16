@@ -45,9 +45,6 @@ spec:
           serviceAccountName: pipeline-service-account
           pipelineRef:
             name: component-pipeline
-          timeouts:
-            pipeline: "4h0m0s"
-            tasks: "4h0m0s"
           podTemplate:
             nodeSelector:
               node: hp
