@@ -63,7 +63,7 @@ spec:
         echo -n "${image}" > $(results.image.path)
 
         # Initialize default config values
-        builder="paketobuildpacks/builder-jammy-base:latest"
+        builder="paketobuildpacks/builder-jammy-full:latest"
         buildpack=""
         source_subpath="${CHANGED_COMPONENT}"
 
