@@ -89,11 +89,20 @@ spec:
         if [[ -f "${target_toml}" ]]; then
           echo "Parsing Environment Variables from ${target_toml}..."
 
-          parsed_envs=$(awk -F '"' '
+          parsed_envs=$(awk -v q="'" '
               /\[\[build.env\]\]/ { in_env=1; next }
               /^\[/ { in_env=0 }
-              in_env && /name *=/  { name=$2 }
-              in_env && /value *=/ { value=$2; if(name!="") { print name "=" value; name="" } }
+              in_env && /name *=/  {
+                  sub(/.*=[ \t]*/, "");
+                  gsub("^[" q "\x22]|[" q "\x22]$", "");
+                  name=$0
+              }
+              in_env && /value *=/ {
+                  sub(/.*=[ \t]*/, "");
+                  gsub("^[" q "\x22]|[" q "\x22]$", "");
+                  value=$0;
+                  if(name!="") { print name "=" value; name="" }
+              }
           ' "${target_toml}")
 
           if [[ -n "${parsed_envs}" ]]; then
