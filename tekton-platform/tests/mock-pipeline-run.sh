@@ -32,5 +32,5 @@ cat <<EOF | kubectl apply -f -
       - name: gitrepositoryurl
         value: "https://github.com/khanhcmlab/saritasa-devops-build-samples" 
       - name: action
-        value: "deploy"
+        value: "build"
 EOF

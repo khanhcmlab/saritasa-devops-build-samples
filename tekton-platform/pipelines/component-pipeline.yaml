@@ -82,22 +82,22 @@ spec:
         - name: CNB_ENV_VARS
           value:
             - "$(tasks.configure-component.results.env-vars[*])"
-    # - name: patch-deployment
-    #   runAfter:
-    #     - buildpacks
-    #   when:
-    #     - input: "$(params.action)"
-    #       operator: in
-    #       values: ["deploy"]
-    #   taskRef:
-    #     name: patch-deployment
-    #   workspaces:
-    #     - name: source
-    #       workspace: source-workspace
-    #   params:
-    #     - name: DEPLOYMENT_NAME
-    #       value: "$(tasks.configure-component.results.component-name)"
-    #     - name: IMAGE_NAME
-    #       value: "$(params.registry-path)/$(tasks.configure-component.results.component-name)"
-    #     - name: TAG
-    #       value: "$(tasks.configure-component.results.image-tag)"
+    - name: patch-deployment
+      runAfter:
+        - buildpacks
+      when:
+        - input: "$(params.action)"
+          operator: in
+          values: ["deploy"]
+      taskRef:
+        name: patch-deployment
+      workspaces:
+        - name: source
+          workspace: source-workspace
+      params:
+        - name: DEPLOYMENT_NAME
+          value: "$(tasks.configure-component.results.component-name)"
+        - name: IMAGE_NAME
+          value: "$(params.registry-path)/$(tasks.configure-component.results.component-name)"
+        - name: TAG
+          value: "$(tasks.configure-component.results.image-tag)"
