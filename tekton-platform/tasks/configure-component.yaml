@@ -67,164 +67,41 @@ spec:
         buildpack=""
         source_subpath="${CHANGED_COMPONENT}"
 
-        # Tech stack is determined by the first segment of the component path (e.g., "go" for "go/hello-world")
         TECH_STACK="${CHANGED_COMPONENT%%/*}"
 
-        # Map tech stack to buildpack and builder, with special handling for web-servers group and Java versions
-        case "${TECH_STACK}" in
-          ca-certificates) buildpack="paketo-buildpacks/go" ;;
-          php)             buildpack="paketo-buildpacks/php"
-                           builder="paketobuildpacks/builder-jammy-full:latest" ;;
-          web-servers)     # Special handling for web-servers group
-              if [ "${CHANGED_COMPONENT}" = "web-servers/httpd-sample" ]; then buildpack="paketo-buildpacks/httpd"; builder="paketobuildpacks/builder-jammy-full:latest"
-              elif [ "${CHANGED_COMPONENT}" = "web-servers/nginx-sample" ]; then buildpack="paketo-buildpacks/nginx"
-              else buildpack="paketo-buildpacks/web-servers"; fi ;;
-          *)               # All other languages (go, nodejs, python, ruby, dotnet-core) follow this pattern
-              buildpack="paketo-buildpacks/${TECH_STACK}" ;;
-        esac
-
-        # Dynamic args and custom configurations
-        DYNAMIC_ENVS=""
-        DYNAMIC_BPS=""
-        case "${CHANGED_COMPONENT}" in
-        "git/git-sample")                         source_subpath="git/git-sample/app" ;;
-        "nodejs/angular-npm" | "nodejs/vue-npm")  DYNAMIC_ENVS="BP_NODE_RUN_SCRIPTS=build
-        NODE_ENV=development" ;;
-        "nodejs/react-yarn")                      DYNAMIC_ENVS="BP_NODE_RUN_SCRIPTS=build" ;;
-        "php/composer")                           DYNAMIC_ENVS="BP_PHP_WEB_DIR=htdocs" ;;
-        "php/memcached_session_handler" | "php/redis_session_handler") DYNAMIC_ENVS="BP_PHP_WEB_DIR=htdocs
-        SERVICE_BINDING_ROOT=/bindings" ;;
-        "web-servers/angular-nginx-sample")       DYNAMIC_ENVS="BP_NODE_RUN_SCRIPTS=build
-        BP_WEB_SERVER=nginx
-        BP_WEB_SERVER_ROOT=dist/my-project-name
-        BP_WEB_SERVER_ENABLE_PUSH_STATE=true" ;;
-        "web-servers/react-frontend-sample")      DYNAMIC_ENVS="BP_WEB_SERVER=httpd
-        BP_WEB_SERVER_ROOT=build
-        BP_WEB_SERVER_ENABLE_PUSH_STATE=true" ;;
-        "web-servers/no-config-file-sample")      source_subpath="web-servers/no-config-file-sample/app"
-                                                  DYNAMIC_ENVS="BP_WEB_SERVER=nginx
-        SERVICE_BINDING_ROOT=/bindings" ;;
-        
-        # Special handling for Java versions
-        java/akka | java/deps | java/leiningen)   DYNAMIC_ENVS="BP_JVM_VERSION=11" ;;
-        java/application-insights | java/aspectj | java/jar | java/kotlin | java/war-spring)
-            DYNAMIC_ENVS="BP_JVM_VERSION=17"
-            [ "${CHANGED_COMPONENT}" = "java/war-spring" ] && DYNAMIC_ENVS="${DYNAMIC_ENVS}
-            BP_TOMCAT_VERSION=10" ;;
-        java/dist-zip)                            DYNAMIC_ENVS="BP_GRADLE_BUILD_ARGUMENTS=--no-daemon -x test bootDistZip
-        BP_GRADLE_BUILT_ARTIFACT=build/distributions/*.zip
-        BP_JVM_VERSION=17" ;;
-        java/java-node/gradle-node)               builder="paketobuildpacks/builder-jammy-base:latest"
-                                                  DYNAMIC_ENVS="BP_JVM_VERSION=21
-        BP_JAVA_INSTALL_NODE=true
-        BP_NODE_PROJECT_PATH=frontend" ;;
-        java/java-node/maven-yarn)                DYNAMIC_ENVS="BP_JVM_VERSION=17
-        BP_JAVA_INSTALL_NODE=true" ;;
-        java/native-image/quarkus-native-image-maven) builder="paketobuildpacks/builder-jammy-tiny:latest"
-                                                  DYNAMIC_ENVS="BP_NATIVE_IMAGE=true
-        BP_MAVEN_ADDITIONAL_BUILD_ARGUMENTS=-Dquarkus.package.type=native-sources
-        BP_MAVEN_BUILT_ARTIFACT=target/native-sources
-        BP_NATIVE_IMAGE_BUILD_ARGUMENTS_FILE=native-sources/native-image.args
-        BP_NATIVE_IMAGE_BUILT_ARTIFACT=native-sources/*-runner.jar
-        BP_JVM_VERSION=21" ;;
-        java/native-image/spring-boot-native-image-gradle) builder="paketobuildpacks/builder-jammy-tiny:latest"
-                                                  DYNAMIC_ENVS="BP_NATIVE_IMAGE=true" ;;
-        java/native-image/spring-boot-native-image-maven) builder="paketobuildpacks/builder-jammy-tiny:latest"
-                                                  DYNAMIC_ENVS="BP_NATIVE_IMAGE=true
-        BP_MAVEN_BUILD_ARGUMENTS=-Dmaven.test.skip=true --no-transfer-progress package -Pnative
-        BP_JVM_VERSION=17" ;;
-        java/opentelemetry)                       DYNAMIC_BPS="paketo-buildpacks/java
-        docker.io/paketobuildpacks/opentelemetry"
-                                                  DYNAMIC_ENVS="BP_OPENTELEMETRY_ENABLED=true
-        BP_JVM_VERSION=17" ;;
-        esac
-
-        # Output source-subpath update if needed
-        echo -n "${source_subpath}" > $(results.source-subpath.path)
-
-        # Prepare path to component directory
+        echo -n "${source_subpath}" > "$(results.source-subpath.path)"
         path_to_app="$(workspaces.source.path)/${source_subpath}"
+        target_toml="${path_to_app}/project.toml"
 
-        # Write project.toml if it does not exist
-        if [ ! -f "${path_to_app}/project.toml" ]; then
-          toml_content=""
-          
-          # Add default buildpacks if set
-          # Add default buildpacks if set
-          if [ -n "${DYNAMIC_BPS}" ]; then
-            toml_bps=$(echo "${DYNAMIC_BPS}" | while read -r bp; do
-              bp=$(echo "${bp}" | sed 's/^[ \t]*//')
-              if [ -n "${bp}" ]; then
-                echo "[[build.buildpacks]]"
-                echo "id = \"${bp}\""
-              fi
-            done)
-            toml_content=$(printf "%s\n%s" "${toml_content}" "${toml_bps}")
-          elif [ -n "${buildpack}" ]; then
-            toml_content=$(printf "[[build.buildpacks]]\nid = \"%s\"\n" "${buildpack}")
-          fi
-
-          # Add default env vars
-          if [ -n "${DYNAMIC_ENVS}" ]; then
-            toml_envs=$(echo "${DYNAMIC_ENVS}" | while read -r env_var; do
-              env_var=$(echo "${env_var}" | sed 's/^[ \t]*//')
-              if [ -n "${env_var}" ]; then
-                key="${env_var%%=*}"
-                val="${env_var#*=}"
-                echo "[[build.env]]"
-                echo "name = \"${key}\""
-                echo "value = \"${val}\""
-              fi
-            done)
-            toml_content=$(printf "%s\n%s" "${toml_content}" "${toml_envs}")
-          fi
-
-          if [ -n "${toml_content}" ]; then
-            echo "Writing generated project.toml to ${path_to_app}/project.toml..."
-            mkdir -p "${path_to_app}"
-            printf "${toml_content}" > "${path_to_app}/project.toml"
-          fi
+        if [[ ! -f "${target_toml}" ]]; then
+          echo "project.toml is not exists. Creating..."
+          mkdir -p "${path_to_app}"
+          cat << EOF > "${target_toml}"
+        [[build.buildpacks]]
+        id = "paketo-buildpacks/${TECH_STACK}"
+        EOF
+          echo "Create project.toml succesfully for ${TECH_STACK}"
+        else
+          echo "Found ${TECH_STACK} project.toml. Skip this step"
         fi
 
-        # Parse project.toml for env vars
         ENV_VARS_JSON="[]"
-        if [ -f "${path_to_app}/project.toml" ]; then
-          echo "Found project.toml for component. Parsing environment variables..."
-          parsed_envs=$(awk -v q="'" '
-            /^\[/ {
-              if ($0 ~ /^\[\[build\.env\]\]/) {
-                in_env = 1;
-              } else {
-                in_env = 0;
-              }
-              name = "";
-              value = "";
-              next;
-            }
-            in_env && /name[ \t]*=[ \t]*/ {
-              val = $0;
-              sub(/.*=[ \t]*/, "", val);
-              gsub("^[" q "\x22]|[" q "\x22]$", "", val);
-              name = val;
-            }
-            in_env && /value[ \t]*=[ \t]*/ {
-              val = $0;
-              sub(/.*=[ \t]*/, "", val);
-              gsub("^[" q "\x22]|[" q "\x22]$", "", val);
-              value = val;
-              if (name != "" && value != "") {
-                print name "=" value;
-                name = "";
-                value = "";
-              }
-            }
-          ' "${path_to_app}/project.toml")
+        if [[ -f "${target_toml}" ]]; then
+          echo "Parsing Environment Variables from ${target_toml}..."
 
-          if [ -n "${parsed_envs}" ]; then
-            ENV_VARS_JSON=$(echo "${parsed_envs}" | awk '{printf "%s\"%s\"", (NR==1?"":","), $0} END {printf ""}')
-            ENV_VARS_JSON="[${ENV_VARS_JSON}]"
+          parsed_envs=$(awk -F '"' '
+              /\[\[build.env\]\]/ { in_env=1; next }
+              /^\[/ { in_env=0 }
+              in_env && /name *=/  { name=$2 }
+              in_env && /value *=/ { value=$2; if(name!="") { print name "=" value; name="" } }
+          ' "${target_toml}")
+
+          if [[ -n "${parsed_envs}" ]]; then
+              ENV_VARS_JSON=$(echo "${parsed_envs}" | awk 'BEGIN {printf "["} {printf "%s\"%s\"", (NR==1?"":","), $0} END {print "]"}')
           fi
         fi
+
+        echo "ENV_VARS_JSON=${ENV_VARS_JSON}"
 
         # Output remaining results
         echo -n "${builder}" > $(results.builder.path)
