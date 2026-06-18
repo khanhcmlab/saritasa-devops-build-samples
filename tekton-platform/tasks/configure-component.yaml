@@ -31,6 +31,9 @@ spec:
       description: "Sanitized tag used for the image"
     - name: process-type
       description: "Default process type for the component (e.g. web or binary name)"
+    - name: env-vars
+      type: array
+      description: "Environment variables parsed from project.toml"
   steps:
     - name: configure
       image: alpine/git:v2.30.2
@@ -60,38 +63,60 @@ spec:
         echo -n "${image}" > $(results.image.path)
 
         # Initialize default config values
-        builder="paketobuildpacks/builder-jammy-base:latest"
+        builder="paketobuildpacks/builder-jammy-full:latest"
         buildpack=""
-        additional_args=""
-        descriptor=""
         source_subpath="${CHANGED_COMPONENT}"
 
-        # Tech stack is determined by the first segment of the component path (e.g., "go" for "go/hello-world")
         TECH_STACK="${CHANGED_COMPONENT%%/*}"
 
-        # Map tech stack to buildpack and builder, with special handling for web-servers group and Java versions
-        case "${TECH_STACK}" in
-          ca-certificates) buildpack="paketo-buildpacks/go" ;;
-          php)             buildpack="paketo-buildpacks/php"
-                           builder="paketobuildpacks/builder-jammy-full:latest" ;;
-          web-servers)     # Special handling for web-servers group
-              if [ "${CHANGED_COMPONENT}" = "web-servers/httpd-sample" ]; then buildpack="paketo-buildpacks/httpd"; builder="paketobuildpacks/builder-jammy-full:latest"
-              elif [ "${CHANGED_COMPONENT}" = "web-servers/nginx-sample" ]; then buildpack="paketo-buildpacks/nginx"
-              else buildpack="paketo-buildpacks/web-servers"; fi ;;
-          *)               # All other languages (go, nodejs, python, ruby, dotnet-core) follow this pattern
-              buildpack="paketo-buildpacks/${TECH_STACK}" ;;
-        esac
-
-
-        # Output source-subpath update if needed
-        echo -n "${source_subpath}" > $(results.source-subpath.path)
-
-        # Prepare path to component directory
+        echo -n "${source_subpath}" > "$(results.source-subpath.path)"
         path_to_app="$(workspaces.source.path)/${source_subpath}"
+        target_toml="${path_to_app}/project.toml"
 
+        if [[ ! -f "${target_toml}" ]]; then
+          echo "project.toml is not exists. Creating..."
+          mkdir -p "${path_to_app}"
+          cat << EOF > "${target_toml}"
+        [[build.buildpacks]]
+        id = "paketo-buildpacks/${TECH_STACK}"
+        EOF
+          echo "Create project.toml succesfully for ${TECH_STACK}"
+        else
+          echo "Found ${TECH_STACK} project.toml. Skip this step"
+        fi
+
+        ENV_VARS_JSON="[]"
+        if [[ -f "${target_toml}" ]]; then
+          echo "Parsing Environment Variables from ${target_toml}..."
+
+          parsed_envs=$(awk -v q="'" '
+              /\[\[build.env\]\]/ { in_env=1; next }
+              /^\[/ { in_env=0 }
+              in_env && /name *=/  {
+                  sub(/.*=[ \t]*/, "");
+                  gsub("^[" q "\x22]|[" q "\x22]$", "");
+                  name=$0
+              }
+              in_env && /value *=/ {
+                  sub(/.*=[ \t]*/, "");
+                  gsub("^[" q "\x22]|[" q "\x22]$", "");
+                  value=$0;
+                  if(name!="") { print name "=" value; name="" }
+              }
+          ' "${target_toml}")
+
+          if [[ -n "${parsed_envs}" ]]; then
+              ENV_VARS_JSON=$(echo "${parsed_envs}" | awk 'BEGIN {printf "["} {printf "%s\"%s\"", (NR==1?"":","), $0} END {print "]"}')
+          fi
+        fi
+
+        echo "ENV_VARS_JSON=${ENV_VARS_JSON}"
 
         # Output remaining results
         echo -n "${builder}" > $(results.builder.path)
 
         # Output process-type result
         echo -n "${PROCESS_TYPE}" > $(results.process-type.path)
+
+        # Output env-vars result
+        echo -n "${ENV_VARS_JSON}" > $(results.env-vars.path)

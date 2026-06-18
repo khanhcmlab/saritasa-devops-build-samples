@@ -4,21 +4,42 @@ This directory contains the Tekton CI/CD pipeline configuration designed to auto
 
 ## Architecture & Directory Structure
 
-*   **`base/`**: Holds RBAC permissions, service accounts, and webhook secret manifests.
-*   **`pipelines/`**: Defines the central CI/CD pipeline:
-    *   `orchestrator-pipeline.yaml`: Unified pipeline that runs concurrency check, clones repository, runs change-detection, executes buildpacks build phases, and patches Kubernetes deployments.
+*   **`base/`**: Holds RBAC permissions, service accounts, sealed secrets (GitHub authentication, GitHub webhook, and GHCR registry credentials), and triggers webhook service manifests.
+*   **`pipelines/`**: Defines the CI/CD pipelines:
+    *   `orchestrator-pipeline.yaml`: Entrypoint orchestrator pipeline that runs concurrency checks, clones the repository, detects component changes, and dynamically dispatches individual component builds in parallel.
+    *   `component-pipeline.yaml`: Builder pipeline that runs for each changed component to configure build variables, run Cloud Native Buildpacks building phases, and optionally deploy the application.
 *   **`tasks/`**: Declares individual Tekton tasks containing their inline script logic:
-    *   `check-concurrency.yaml`: Prevents multiple concurrent runs by queueing runs in order of their creation timestamp.
-    *   `detect-changes.yaml`: Scans the cloned workspace to identify which component changed, parses its build configuration, generates/writes the `project.toml` file directly into the workspace, and outputs build metadata.
-    *   `patch-deployment.yaml`: Patches the Kubernetes deployment container with the newly built image tag and monitors the rollout to completion.
-*   **`triggers/`**: Configures EventListeners, TriggerBindings, and TriggerTemplates to trigger builds automatically via Git webhooks.
-*   **`tests/`**: Includes helper shell scripts to test and run mock pipelineruns.
+    *   `check-concurrency.yaml`: Prevents multiple concurrent runs by queueing pipeline runs in order of their creation timestamp.
+    *   `detect-changes.yaml`: Scans the cloned workspace using `git diff` to identify which components changed and outputs a JSON list of those components.
+    *   `configure-component.yaml`: Dynamically configures building variables (builder image, target image name, environment variables, default process type, etc.) for a specific component and ensures a `project.toml` configuration is present.
+    *   `dispatch-pipelinerun.yaml`: Dynamically triggers a child `component-pipeline` PipelineRun with dedicated workspace/cache PVC configurations for a specific component.
+    *   `patch-deployment.yaml`: Patches the target Kubernetes deployment container with the newly built image tag and monitors the rollout to completion.
+*   **`templates/`**: Contains language/framework-specific default configuration templates (e.g., `default.toml` files for Node.js, Go, Python, Java, etc.) that can be referenced for component builds.
+*   **`triggers/`**: Configures EventListeners (`event-listener.yaml`), TriggerBindings (`github-binding.yaml`), and TriggerTemplates (`trigger-template.yaml`) to trigger builds automatically via Git webhooks.
+*   **`scripts/`**: Contains helper utility scripts for workspace management:
+    *   `stop-all-running-pipelinerun.sh`: Helper script to cancel/stop all running pipeline runs in the namespace.
+*   **`tests/`**: Includes helper shell scripts to test and run mock pipelineruns:
+    *   `mock-pipeline-run.sh`: Triggers a mock orchestrator pipeline run manually.
 
 ---
 
 ## Prerequisites
 
 1.  **Tekton Pipelines and Triggers** installed in your Kubernetes cluster.
+    *   **Install Tekton Pipelines**:
+        ```bash
+        kubectl apply --filename https://storage.googleapis.com/tekton-releases/pipeline/latest/release.yaml
+        ```
+        Verify that all components are running:
+        ```bash
+        kubectl get pods --namespace tekton-pipelines --watch
+        ```
+    *   **Install Tekton Triggers and Interceptors**:
+        ```bash
+        kubectl apply --filename https://storage.googleapis.com/tekton-releases/triggers/latest/release.yaml
+        kubectl apply --filename https://storage.googleapis.com/tekton-releases/triggers/latest/interceptors.yaml
+        ```
+        For more details, refer to the [Tekton Getting Started Guide](https://tekton.dev/docs/getting-started/).
 2.  **Official `git-clone` task** installed from the Tekton Hub:
     ```bash
     kubectl apply -f https://raw.githubusercontent.com/tektoncd/catalog/main/task/git-clone/0.9/git-clone.yaml
@@ -27,7 +48,14 @@ This directory contains the Tekton CI/CD pipeline configuration designed to auto
     ```bash
     kubectl apply -f https://raw.githubusercontent.com/tektoncd/catalog/refs/heads/main/task/buildpacks-phases/0.3/buildpacks-phases.yaml
     ```
-4.  **Configure Tekton Feature Flags**: By default, Tekton's Affinity Assistant restricts task runs to using at most one PVC-based workspace under the default `coschedule: workspaces` mode. Since the component pipeline binds multiple PVCs (for source and cache), you must update the `coschedule` flag to `pipelineruns` in the `feature-flags` ConfigMap under the `tekton-pipelines` namespace:
+4.  **Sealed Secrets Controller** installed and configured in your Kubernetes cluster:
+    *   The platform infrastructure uses `SealedSecrets` (found in the `base/` directory) to safely store and decrypt GitHub credentials and GHCR registry secrets.
+    *   **Install Sealed Secrets**:
+        ```bash
+        kubectl apply -f https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.21.0/controller.yaml
+        ```
+        For more details and customization options, see the [Sealed Secrets Docs](https://github.com/bitnami-labs/sealed-secrets).
+5.  **Configure Tekton Feature Flags**: By default, Tekton's Affinity Assistant restricts task runs to using at most one PVC-based workspace under the default `coschedule: workspaces` mode. Since the component pipeline binds multiple PVCs (for source and cache), you must update the `coschedule` flag to `pipelineruns` in the `feature-flags` ConfigMap under the `tekton-pipelines` namespace:
     ```bash
     kubectl patch cm feature-flags -n tekton-pipelines --type=merge -p '{"data":{"coschedule":"pipelineruns"}}'
     ```
@@ -56,24 +84,20 @@ kubectl apply -f tekton-platform/triggers/
 
 ## Running and Testing Mock Pipelines
 
-You can trigger a mock pull request pipeline run manually with:
+You can trigger a mock pipeline run manually with:
 
 ```bash
 bash tekton-platform/tests/mock-pipeline-run.sh
 ```
 
-To test concurrency queuing and parallel processing, run:
-
-```bash
-bash tekton-platform/tests/mock-parallel-pipeline-run.sh
-```
+To test concurrency queuing and parallel processing, you can run the mock script multiple times in quick succession.
 
 ---
 
 ## Adding/Modifying Component Builds
 
 Build configurations are maintained directly inside the component directories:
-1.  **Component Detection**: Any new subdirectory with a `README.md` containing `pack build` is automatically registered as a component at runtime.
-2.  **Build Customization**: To change builder images, environment variables, or descriptors for a component, update its `README.md` commands. The configuration is parsed by the `detect-changes.yaml` task and translated into a local `project.toml` file in the workspace containing `[[build.env]]` and `[[build.buildpacks]]` blocks.
+1.  **Component Detection**: Any subdirectory (excluding platform/infrastructure folders like `tekton-platform`, `kubernetes`, `tests`, etc.) is automatically registered as a buildpack-ready component.
+2.  **Build Customization**: To customize builder images, environment variables, or buildpacks for a component, define a `project.toml` file in its component directory containing `[[build.env]]` and `[[build.buildpacks]]` blocks. If no `project.toml` is present, a default one will be automatically generated at build time using the detected technology stack.
 
 
