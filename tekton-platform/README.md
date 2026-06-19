@@ -62,6 +62,33 @@ This directory contains the Tekton CI/CD pipeline configuration designed to auto
 
 ---
 
+## GitHub Webhook Configuration
+
+To trigger pipeline builds automatically when code is pushed to GitHub, you need to configure a GitHub Webhook:
+
+1. **Expose the EventListener (via Cloudflare Tunnel)**:
+   * The platform exposes the EventListener via `tekton-platform/base/triggers-webhook-service.yaml`, which forwards requests from the `default` namespace to the actual `el-gh-event-listener` running in the `saritasa-test` namespace using an `ExternalName` service:
+     ```yaml
+     apiVersion: v1
+     kind: Service
+     metadata:
+       name: gh-listener-webhook
+       namespace: default
+     spec:
+       type: ExternalName
+       externalName: el-gh-event-listener.saritasa-test.svc.cluster.local
+     ```
+   * Expose this forwarded `gh-listener-webhook` service (running on port `8080` in the `default` namespace) to the internet by routing it through your **Cloudflare Tunnel** (`cloudflared`) pointing to `http://gh-listener-webhook.default.svc.cluster.local:8080`.
+2. **Configure the Webhook on GitHub**:
+   * Go to your repository on GitHub -> **Settings** -> **Webhooks** -> **Add webhook**.
+   * **Payload URL**: Enter your exposed public URL (e.g., `https://<your-cloudflare-tunnel-domain>`).
+   * **Content type**: Select `application/json`.
+   * **Secret**: Enter the webhook secret token matching the value configured in your Kubernetes `github-webhook-secret` (defined under the `token` key).
+   * **Which events**: Select **Just the push event** (the EventListener is configured to intercept `push` events).
+   * Click **Add webhook** to register it.
+
+---
+
 ## Installation & Deployment
 
 Apply the manifests in the following order:
