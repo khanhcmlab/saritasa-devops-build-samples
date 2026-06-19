@@ -12,6 +12,7 @@
 
     foreach (get_loaded_extensions() as $ext) {
         print($ext . "\n");
+        print("Anything");
     }
 ?>
   </body>
