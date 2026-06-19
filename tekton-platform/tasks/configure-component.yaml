@@ -63,11 +63,30 @@ spec:
         echo -n "${image}" > $(results.image.path)
 
         # Initialize default config values
-        builder="paketobuildpacks/builder-jammy-full:latest"
         buildpack=""
         source_subpath="${CHANGED_COMPONENT}"
 
         TECH_STACK="${CHANGED_COMPONENT%%/*}"
+
+        # Select builder based on TECH_STACK concepts (Tiny, Base, Full)
+        case "${TECH_STACK}" in
+          go)
+            # Tiny: distroless-like, ideal for most Golang apps
+            builder="paketobuildpacks/builder-jammy-tiny:latest"
+            ;;
+          php)
+            # Full: Ubuntu-based, ideal for PHP apps
+            builder="paketobuildpacks/builder-jammy-full:latest"
+            ;;
+          *)
+            # Base/Tiny check: Java GraalVM Native Image vs Base runtimes (Java, .NET, Node.js, Python, Ruby, etc.)
+            if echo "${CHANGED_COMPONENT}" | grep -q "native-image"; then
+              builder="paketobuildpacks/builder-jammy-tiny:latest"
+            else
+              builder="paketobuildpacks/builder-jammy-base:latest"
+            fi
+            ;;
+        esac
 
         echo -n "${source_subpath}" > "$(results.source-subpath.path)"
         path_to_app="$(workspaces.source.path)/${source_subpath}"
