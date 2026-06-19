@@ -36,7 +36,7 @@ spec:
       description: "Environment variables parsed from project.toml"
   steps:
     - name: configure
-      image: alpine/git:v2.30.2
+      image: dewwripper/alpine-yq:0.0.1
       script: |
         #!/bin/sh
         set -e
@@ -63,11 +63,30 @@ spec:
         echo -n "${image}" > $(results.image.path)
 
         # Initialize default config values
-        builder="paketobuildpacks/builder-jammy-full:latest"
         buildpack=""
         source_subpath="${CHANGED_COMPONENT}"
 
         TECH_STACK="${CHANGED_COMPONENT%%/*}"
+
+        # Select builder based on TECH_STACK concepts (Tiny, Base, Full)
+        case "${TECH_STACK}" in
+          go)
+            # Tiny: distroless-like, ideal for most Golang apps
+            builder="paketobuildpacks/builder-jammy-tiny:latest"
+            ;;
+          php)
+            # Full: Ubuntu-based, ideal for PHP apps
+            builder="paketobuildpacks/builder-jammy-full:latest"
+            ;;
+          *)
+            # Base/Tiny check: Java GraalVM Native Image vs Base runtimes (Java, .NET, Node.js, Python, Ruby, etc.)
+            if echo "${CHANGED_COMPONENT}" | grep -q "native-image"; then
+              builder="paketobuildpacks/builder-jammy-tiny:latest"
+            else
+              builder="paketobuildpacks/builder-jammy-base:latest"
+            fi
+            ;;
+        esac
 
         echo -n "${source_subpath}" > "$(results.source-subpath.path)"
         path_to_app="$(workspaces.source.path)/${source_subpath}"
@@ -85,29 +104,12 @@ spec:
           echo "Found ${TECH_STACK} project.toml. Skip this step"
         fi
 
+        # Parsing ENV_VARS from project.toml
         ENV_VARS_JSON="[]"
         if [[ -f "${target_toml}" ]]; then
           echo "Parsing Environment Variables from ${target_toml}..."
-
-          parsed_envs=$(awk -v q="'" '
-              /\[\[build.env\]\]/ { in_env=1; next }
-              /^\[/ { in_env=0 }
-              in_env && /name *=/  {
-                  sub(/.*=[ \t]*/, "");
-                  gsub("^[" q "\x22]|[" q "\x22]$", "");
-                  name=$0
-              }
-              in_env && /value *=/ {
-                  sub(/.*=[ \t]*/, "");
-                  gsub("^[" q "\x22]|[" q "\x22]$", "");
-                  value=$0;
-                  if(name!="") { print name "=" value; name="" }
-              }
-          ' "${target_toml}")
-
-          if [[ -n "${parsed_envs}" ]]; then
-              ENV_VARS_JSON=$(echo "${parsed_envs}" | awk 'BEGIN {printf "["} {printf "%s\"%s\"", (NR==1?"":","), $0} END {print "]"}')
-          fi
+          ENV_VARS_JSON=$(yq eval '[.build.env[] | .name + "=" + .value]' "${target_toml}" -o=json 2>/dev/null)
+          [[ "${ENV_VARS_JSON}" == "null" || -z "${ENV_VARS_JSON}" ]] && ENV_VARS_JSON="[]"
         fi
 
         echo "ENV_VARS_JSON=${ENV_VARS_JSON}"
