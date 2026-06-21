@@ -45,3 +45,18 @@ spec:
         - ref: github-merge-binding
       template:
         ref: trigger-template
+    - name: dispatch-component-trigger
+      interceptors:
+        - ref:
+            name: "cel"
+          params:
+            - name: "filter"
+              value: "header.match('X-Event-Type', 'component-dispatch')"
+            - name: "overlays"
+              value:
+                - key: "component_clean"
+                  expression: "body.component.replace('/', '-').replace('_', '-')"
+      bindings:
+        - ref: component-dispatch-binding
+      template:
+        ref: component-dispatch-template

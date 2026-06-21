@@ -4,8 +4,8 @@ metadata:
   name: dispatch-pipelinerun
 spec:
   description: >-
-    Dynamically creates/dispatches a downstream PipelineRun for a specific component
-    with its own workspaces, caches, and parameter parameters.
+    Dispatches a downstream PipelineRun for a specific component by posting an HTTP request
+    to the EventListener, which uses a TriggerTemplate to spawn it.
   params:
     - name: component
       type: string
@@ -39,80 +39,28 @@ spec:
       description: Clean out the contents of the repo's destination directory if it already exists before cloning.
   steps:
     - name: dispatch
-      image: alpine/k8s:1.20.4
+      image: curlimages/curl:7.85.0
       script: |
         #!/bin/sh
         set -e
 
-        PARAM_COMPONENT="$(params.component)"
-        PARAM_GITREVISION="$(params.git-revision)"
-        PARAM_GITURL="$(params.git-repository-url)"
-        PARAM_REGISTRY="$(params.registry-path)"
-        PARAM_ACTION="$(params.action)"
-        PARAM_MAX_CONCURRENCY="$(params.max-concurrency)"
-        PARAM_NAMESPACE="$(params.namespace)"
-        PARAM_CONTAINER_NAME="$(params.container-name)"
-        PARAM_CLONE_DEPTH="$(params.clone-depth)"
-        PARAM_DELETE_EXISTING="$(params.delete-existing)"
+        COMPONENT_CLEAN=$(echo "$(params.component)" | tr '/_' '--')
 
-        COMPONENT_CLEAN=$(echo "$PARAM_COMPONENT" | tr '/_' '--')
+        echo "Dispatching PipelineRun for component: $(params.component) (clean name: ${COMPONENT_CLEAN}) via EventListener..."
 
-        echo "Dispatching PipelineRun for component: ${PARAM_COMPONENT} (clean name: ${COMPONENT_CLEAN})"
-
-        echo "Creating PVCs ${SOURCE_PVC_NAME} and ${CACHE_PVC_NAME} and PipelineRun..."
-
-
-        cat <<EOF | kubectl create -f -
-        apiVersion: tekton.dev/v1beta1
-        kind: PipelineRun
-        metadata:
-          generateName: ${COMPONENT_CLEAN}-pipelinerun-
-          namespace: ${PARAM_NAMESPACE}
-        spec:
-          serviceAccountName: pipeline-service-account
-          pipelineRef:
-            name: component-pipeline
-          podTemplate:
-            nodeSelector:
-              node: hp
-          workspaces:
-            - name: source-workspace
-              volumeClaimTemplate:
-                spec:
-                  storageClassName: local-path
-                  accessModes:
-                    - ReadWriteOnce
-                  resources:
-                    requests:
-                      storage: 1Gi
-            - name: cache
-              volumeClaimTemplate:
-                spec:
-                  storageClassName: local-path
-                  accessModes:
-                    - ReadWriteOnce
-                  resources:
-                    requests:
-                      storage: 1Gi
-          params:
-            - name: component
-              value: "${PARAM_COMPONENT}"
-            - name: git-revision
-              value: "${PARAM_GITREVISION}"
-            - name: git-repository-url
-              value: "${PARAM_GITURL}"
-            - name: registry-path
-              value: "${PARAM_REGISTRY}"
-            - name: action
-              value: "${PARAM_ACTION}"
-            - name: max-concurrency
-              value: "${PARAM_MAX_CONCURRENCY}"
-            - name: namespace
-              value: "${PARAM_NAMESPACE}"
-            - name: container-name
-              value: "${PARAM_CONTAINER_NAME}"
-            - name: clone-depth
-              value: "${PARAM_CLONE_DEPTH}"
-            - name: delete-existing
-              value: "${PARAM_DELETE_EXISTING}"
-        EOF
+        curl -X POST \
+          -H "Content-Type: application/json" \
+          -H "X-Event-Type: component-dispatch" \
+          -d '{
+            "component": "$(params.component)",
+            "git-revision": "$(params.git-revision)",
+            "git-repository-url": "$(params.git-repository-url)",
+            "registry-path": "$(params.registry-path)",
+            "action": "$(params.action)",
+            "max-concurrency": "$(params.max-concurrency)",
+            "namespace": "$(params.namespace)",
+            "container-name": "$(params.container-name)",
+            "clone-depth": "$(params.clone-depth)",
+            "delete-existing": "$(params.delete-existing)"
+          }' \
+          "http://el-gh-event-listener.$(params.namespace).svc.cluster.local:8080"

@@ -32,3 +32,5 @@ resources:
   - triggers/event-listener.yaml
   - triggers/github-binding.yaml
   - triggers/trigger-template.yaml
+  - triggers/component-dispatch-binding.yaml
+  - triggers/component-dispatch-template.yaml
