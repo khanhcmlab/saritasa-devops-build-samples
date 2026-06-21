@@ -24,7 +24,6 @@ resources:
   - pipelines/component-pipeline.yaml
   - pipelines/orchestrator-pipeline.yaml
   # Tasks
-  - tasks/check-concurrency.yaml
   - tasks/configure-component.yaml
   - tasks/dispatch-pipelinerun.yaml
   - tasks/patch-deployment.yaml

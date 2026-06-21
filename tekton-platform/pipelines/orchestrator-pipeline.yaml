@@ -32,28 +32,14 @@ spec:
       type: string
       description: Clean out the contents of the repo's destination directory if it already exists before cloning.
     - name: changed-modules
-      type: string
+      type: array
       description: The list of changed modules to build.
   tasks:
-    - name: check-concurrency
-      taskRef:
-        name: check-concurrency
-      params:
-        - name: pipelinerun-name
-          value: $(context.pipelineRun.name)
-        - name: max-concurrency
-          value: $(params.max-concurrency)
-        - name: namespace
-          value: $(params.namespace)
-        - name: changed-modules
-          value: $(params.changed-modules)
     - name: dispatch-pipelineruns
-      runAfter:
-        - check-concurrency
       matrix:
         params:
           - name: component
-            value: $(tasks.check-concurrency.results.changed-modules-json[*])
+            value: $(params.changed-modules[*])
       taskRef:
         name: dispatch-pipelinerun
       params:
@@ -75,3 +61,6 @@ spec:
           value: "$(params.clone-depth)"
         - name: delete-existing
           value: "$(params.delete-existing)"
+        - name: parent-pipelinerun
+          value: "$(context.pipelineRun.name)"
+

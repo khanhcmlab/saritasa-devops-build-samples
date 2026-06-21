@@ -40,19 +40,7 @@ spec:
     - name: cache
       description: Workspace for caching buildpack layers.
   tasks:
-    - name: check-concurrency
-      taskRef:
-        name: check-concurrency
-      params:
-        - name: pipelinerun-name
-          value: $(context.pipelineRun.name)
-        - name: max-concurrency
-          value: $(params.max-concurrency)
-        - name: namespace
-          value: $(params.namespace)
     - name: git-clone
-      runAfter:
-        - check-concurrency
       taskRef:
         name: git-clone
       workspaces:
@@ -63,7 +51,7 @@ spec:
           value: "$(params.git-repository-url)"
         - name: revision
           value: "$(params.git-revision)"
-        - name: deleteExisting
+        - name: delete-existing
           value: "$(params.delete-existing)"
         - name: depth
           value: "$(params.clone-depth)"

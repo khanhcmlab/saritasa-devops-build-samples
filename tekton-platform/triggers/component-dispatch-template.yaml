@@ -58,7 +58,7 @@ spec:
                   - ReadWriteOnce
                 resources:
                   requests:
-                    storage: 1Gi
+                    storage: 5Gi
         params:
           - name: component
             value: $(tt.params.component)

@@ -40,7 +40,7 @@ spec:
                           .join('/')
                       )
                       .distinct()
-                      .join(',')
+                      .marshalJSON()
       bindings:
         - ref: github-merge-binding
       template:

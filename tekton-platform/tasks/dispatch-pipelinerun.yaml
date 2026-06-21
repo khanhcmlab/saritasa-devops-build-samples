@@ -37,18 +37,47 @@ spec:
     - name: delete-existing
       type: string
       description: Clean out the contents of the repo's destination directory if it already exists before cloning.
+    - name: parent-pipelinerun
+      type: string
+      description: The name of the parent orchestrator PipelineRun.
   steps:
     - name: dispatch
-      image: curlimages/curl:7.85.0
+      image: alpine/k8s:1.33.13
       script: |
         #!/bin/sh
         set -e
 
+        PARAM_NAMESPACE="$(params.namespace)"
+        MAX_CONCURRENCY="$(params.max-concurrency)"
         COMPONENT_CLEAN=$(echo "$(params.component)" | tr '/_' '--')
 
+        # Function to get count of active component PipelineRuns
+        get_active_count() {
+          kubectl get pipelinerun -n ${PARAM_NAMESPACE} -o json 2>/dev/null | \
+            jq '[.items[] | select(.spec.pipelineRef.name == "component-pipeline") | select(.status.conditions == null or ([.status.conditions[]? | select(.type == "Succeeded" and (.status == "True" or .status == "False"))] | length == 0))] | length' 2>/dev/null || echo "0"
+        }
+
+        # Stagger check start to avoid race conditions in matrix execution
+        DELAY=$(echo -n "$(params.component)" | cksum | awk '{print $1 % 7}')
+        echo "Staggering concurrency check by ${DELAY} seconds..."
+        sleep ${DELAY}
+
+        # 1. Enforce concurrency limit before dispatching
+        while true; do
+          ACTIVE_COUNT=$(get_active_count)
+          echo "Current active component PipelineRuns: ${ACTIVE_COUNT} (max allowed: ${MAX_CONCURRENCY})"
+          if [ "${ACTIVE_COUNT}" -lt "${MAX_CONCURRENCY}" ]; then
+            echo "Under concurrency limit. Proceeding to dispatch..."
+            break
+          fi
+          echo "Concurrency limit reached. Waiting 10 seconds..."
+          sleep 10
+        done
+
+        # 2. Dispatch via EventListener
         echo "Dispatching PipelineRun for component: $(params.component) (clean name: ${COMPONENT_CLEAN}) via EventListener..."
 
-        curl -X POST \
+        RESPONSE=$(curl -s -X POST \
           -H "Content-Type: application/json" \
           -H "X-Event-Type: component-dispatch" \
           -d '{
@@ -61,6 +90,68 @@ spec:
             "namespace": "$(params.namespace)",
             "container-name": "$(params.container-name)",
             "clone-depth": "$(params.clone-depth)",
-            "delete-existing": "$(params.delete-existing)"
+            "delete-existing": "$(params.delete-existing)",
+            "parent-pipelinerun": "$(params.parent-pipelinerun)"
           }' \
-          "http://el-gh-event-listener.$(params.namespace).svc.cluster.local:8080"
+          "http://el-gh-event-listener.${PARAM_NAMESPACE}.svc.cluster.local:8080")
+
+        # 3. Extract the name of the newly created child PipelineRun
+        EVENT_ID=$(echo "${RESPONSE}" | jq -r '.eventID' 2>/dev/null || true)
+
+        if [ -z "${EVENT_ID}" ] || [ "${EVENT_ID}" = "null" ]; then
+          echo "Error: Failed to obtain eventID from EventListener response."
+          echo "Response was: ${RESPONSE}"
+          exit 1
+        fi
+
+        echo "Waiting for child PipelineRun with eventID ${EVENT_ID} to be created..."
+        CHILD_RUN=""
+        for i in $(seq 1 30); do
+          CHILD_RUN=$(kubectl get pipelinerun -n ${PARAM_NAMESPACE} -l triggers.tekton.dev/triggers-eventid=${EVENT_ID} -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+          if [ -n "${CHILD_RUN}" ] && [ "${CHILD_RUN}" != "null" ]; then
+            break
+          fi
+          sleep 1
+        done
+
+        if [ -z "${CHILD_RUN}" ] || [ "${CHILD_RUN}" = "null" ]; then
+          echo "Error: Failed to find child PipelineRun with eventID: ${EVENT_ID} after 30 seconds."
+          exit 1
+        fi
+
+        echo "Successfully dispatched child PipelineRun: ${CHILD_RUN}"
+
+        # 4. Wait for the child PipelineRun to complete
+        while true; do
+          PIPELINERUN_JSON=$(kubectl get pipelinerun ${CHILD_RUN} -n ${PARAM_NAMESPACE} -o json 2>/dev/null || echo "{}")
+          STATUS=$(echo "${PIPELINERUN_JSON}" | jq -r '.status.conditions[]? | select(.type == "Succeeded") | .status' 2>/dev/null || echo "null")
+          REASON=$(echo "${PIPELINERUN_JSON}" | jq -r '.status.conditions[]? | select(.type == "Succeeded") | .reason' 2>/dev/null || echo "null")
+
+          # Handle the case where status is not yet populated
+          if [ -z "${STATUS}" ] || [ "${STATUS}" = "null" ]; then
+            STATUS="Unknown"
+          fi
+
+          if [ "${STATUS}" = "True" ]; then
+            echo "Child PipelineRun ${CHILD_RUN} completed successfully!"
+            break
+          elif [ "${STATUS}" = "False" ]; then
+            echo "Child PipelineRun ${CHILD_RUN} failed with reason: ${REASON}."
+            PARENT_RUN="$(params.parent-pipelinerun)"
+            if [ -n "${PARENT_RUN}" ] && [ "${PARENT_RUN}" != "null" ]; then
+              echo "Cancelling other sibling component PipelineRuns for orchestrator run: ${PARENT_RUN}..."
+              kubectl get pipelinerun -n ${PARAM_NAMESPACE} -l orchestrator-pipelinerun=${PARENT_RUN} -o json 2>/dev/null | \
+                jq -r '.items[] | select(.status.conditions == null or ([.status.conditions[]? | select(.type == "Succeeded" and (.status == "True" or .status == "False"))] | length == 0)) | .metadata.name' 2>/dev/null | \
+                while read sibling; do
+                  if [ "${sibling}" != "${CHILD_RUN}" ]; then
+                    echo "Cancelling sibling child PipelineRun: ${sibling}..."
+                    kubectl patch pipelinerun "${sibling}" -n "${PARAM_NAMESPACE}" --type=merge -p '{"spec":{"status":"Cancelled"}}' 2>/dev/null || true
+                  fi
+                done
+            fi
+            exit 1
+          fi
+
+          echo "Child PipelineRun ${CHILD_RUN} is still running (status: ${STATUS}, reason: ${REASON}). Waiting 10 seconds..."
+          sleep 10
+        done

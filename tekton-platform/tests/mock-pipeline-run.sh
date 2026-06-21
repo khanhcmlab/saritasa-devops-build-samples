@@ -45,4 +45,9 @@ cat <<EOF | kubectl apply -f -
         value: "2"
       - name: delete-existing
         value: "true"
+      - name: changed-modules
+        value:
+          - "web-servers/nginx-sample"
+          - "web-servers/httpd-sample"
+          - "web-servers/no-config-file-sample"
 EOF
