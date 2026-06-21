@@ -32,7 +32,7 @@ spec:
       type: string
       description: Clean out the contents of the repo's destination directory if it already exists before cloning.
     - name: changed-modules
-      type: array
+      type: string
       description: The list of changed modules to build.
   tasks:
     - name: check-concurrency
@@ -45,13 +45,15 @@ spec:
           value: $(params.max-concurrency)
         - name: namespace
           value: $(params.namespace)
+        - name: changed-modules
+          value: $(params.changed-modules)
     - name: dispatch-pipelineruns
       runAfter:
         - check-concurrency
       matrix:
         params:
           - name: component
-            value: $(params.changed-modules[*])
+            value: $(tasks.check-concurrency.results.changed-modules-json[*])
       taskRef:
         name: dispatch-pipelinerun
       params:
