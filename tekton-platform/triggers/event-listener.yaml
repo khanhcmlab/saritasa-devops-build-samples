@@ -16,12 +16,30 @@ spec:
                 secretKey: "token"
             - name: "eventTypes"
               value: ["push"]
-        # - ref:
-        #     name: "cel"
-        #   params:
-        #     - name: "filter"
-              # value: "body.ref == 'refs/heads/feature/test-ci-cd-2-changes' || body.ref == 'refs/heads/main'"
-              # value: "body.ref == 'refs/heads/main'"
+            - name: "addChangedFiles"
+              value:
+                enabled: true
+        - ref:
+            name: "cel"
+          params:
+            # - name: "filter"
+            #   value: "body.ref == 'refs/heads/main'"
+            - name: "overlays"
+              value:
+                - key: "changed_modules"
+                  expression: |
+                    extensions.changed_files.split(',')
+                      .filter(f,
+                        f.contains('/') &&
+                        !(f.split('/')[0] in ['tekton-platform', 'tests', 'scripts', 'kubernetes', 'kustomize', 'docker']) &&
+                        f.split('/').size() >= ((f.startsWith('java/java-node/') || f.startsWith('java/native-image/')) ? 4 : 3)
+                      )
+                      .map(f,
+                        f.split('/')
+                          .slice(0, (f.startsWith('java/java-node/') || f.startsWith('java/native-image/')) ? 3 : 2)
+                          .join('/')
+                      )
+                      .distinct()
       bindings:
         - ref: github-merge-binding
       template:

@@ -23,3 +23,5 @@ spec:
       value: "2"
     - name: delete-existing
       value: "true"
+    - name: changed-modules
+      value: $(extensions.changed_modules)

@@ -23,6 +23,8 @@ spec:
       description: The depth of the git clone.
     - name: delete-existing
       description: Clean out the contents of the repo's destination directory if it already exists before cloning.
+    - name: changed-modules
+      description: The list of changed modules to build.
   resourcetemplates:
     - apiVersion: tekton.dev/v1beta1
       kind: PipelineRun
@@ -35,16 +37,6 @@ spec:
         podTemplate:
           nodeSelector:
             node: hp
-        workspaces:
-          - name: source-workspace
-            volumeClaimTemplate:
-              spec:
-                storageClassName: local-path
-                accessModes:
-                  - ReadWriteOnce
-                resources:
-                  requests:
-                    storage: 1Gi
         params:
           - name: git-revision
             value: $(tt.params.git-revision)
@@ -64,5 +56,7 @@ spec:
             value: $(tt.params.clone-depth)
           - name: delete-existing
             value: $(tt.params.delete-existing)
+          - name: changed-modules
+            value: $(tt.params.changed-modules)
 
 
