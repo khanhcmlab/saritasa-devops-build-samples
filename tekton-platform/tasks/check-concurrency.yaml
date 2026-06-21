@@ -2,18 +2,17 @@ apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
   name: check-concurrency
-  namespace: saritasa-test
 spec:
   params:
     - name: pipelinerun-name
       type: string
-      default: ""
+      description: The name of the current PipelineRun.
     - name: max-concurrency
       type: string
-      default: "2"
+      description: Maximum number of concurrent PipelineRuns allowed in the namespace.
     - name: namespace
       type: string
-      default: "saritasa-test"
+      description: The namespace to check active PipelineRuns in.
   steps:
     - name: check-concurrency
       image: alpine/k8s:1.33.13

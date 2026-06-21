@@ -2,19 +2,38 @@ apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
   name: dispatch-pipelinerun
-  namespace: saritasa-test
 spec:
   params:
-    - name: COMPONENT
+    - name: component
       type: string
-    - name: gitrevision
+      description: The name of the component to build and deploy.
+    - name: git-revision
       type: string
-    - name: gitrepositoryurl
+      description: The git revision/sha to build.
+    - name: git-repository-url
       type: string
+      description: The git repository URL.
     - name: registry-path
       type: string
+      description: The target docker registry path.
     - name: action
       type: string
+      description: The action to perform (build or deploy).
+    - name: max-concurrency
+      type: string
+      description: Maximum number of concurrent PipelineRuns allowed in the namespace.
+    - name: namespace
+      type: string
+      description: The namespace to check active PipelineRuns in.
+    - name: container-name
+      type: string
+      description: The container name in the Deployment to patch.
+    - name: clone-depth
+      type: string
+      description: The depth of the git clone.
+    - name: delete-existing
+      type: string
+      description: Clean out the contents of the repo's destination directory if it already exists before cloning.
   steps:
     - name: dispatch
       image: alpine/k8s:1.20.4
@@ -22,11 +41,16 @@ spec:
         #!/bin/sh
         set -e
 
-        PARAM_COMPONENT="$(params.COMPONENT)"
-        PARAM_GITREVISION="$(params.gitrevision)"
-        PARAM_GITURL="$(params.gitrepositoryurl)"
+        PARAM_COMPONENT="$(params.component)"
+        PARAM_GITREVISION="$(params.git-revision)"
+        PARAM_GITURL="$(params.git-repository-url)"
         PARAM_REGISTRY="$(params.registry-path)"
         PARAM_ACTION="$(params.action)"
+        PARAM_MAX_CONCURRENCY="$(params.max-concurrency)"
+        PARAM_NAMESPACE="$(params.namespace)"
+        PARAM_CONTAINER_NAME="$(params.container-name)"
+        PARAM_CLONE_DEPTH="$(params.clone-depth)"
+        PARAM_DELETE_EXISTING="$(params.delete-existing)"
 
         COMPONENT_CLEAN=$(echo "$PARAM_COMPONENT" | tr '/_' '--')
 
@@ -40,7 +64,7 @@ spec:
         kind: PipelineRun
         metadata:
           generateName: ${COMPONENT_CLEAN}-pipelinerun-
-          namespace: saritasa-test
+          namespace: ${PARAM_NAMESPACE}
         spec:
           serviceAccountName: pipeline-service-account
           pipelineRef:
@@ -70,12 +94,22 @@ spec:
           params:
             - name: component
               value: "${PARAM_COMPONENT}"
-            - name: gitrevision
+            - name: git-revision
               value: "${PARAM_GITREVISION}"
-            - name: gitrepositoryurl
+            - name: git-repository-url
               value: "${PARAM_GITURL}"
             - name: registry-path
               value: "${PARAM_REGISTRY}"
             - name: action
               value: "${PARAM_ACTION}"
+            - name: max-concurrency
+              value: "${PARAM_MAX_CONCURRENCY}"
+            - name: namespace
+              value: "${PARAM_NAMESPACE}"
+            - name: container-name
+              value: "${PARAM_CONTAINER_NAME}"
+            - name: clone-depth
+              value: "${PARAM_CLONE_DEPTH}"
+            - name: delete-existing
+              value: "${PARAM_DELETE_EXISTING}"
         EOF

@@ -2,16 +2,14 @@ apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
   name: configure-component
-  namespace: saritasa-test
 spec:
   params:
-    - name: gitrevision
+    - name: git-revision
       type: string
       description: The git revision/sha to build.
     - name: registry-path
       type: string
       description: The target docker registry path.
-      default: "ghcr.io/dewwripper"
     - name: component
       type: string
       description: "The component to configure."
@@ -55,8 +53,8 @@ spec:
         clean_name=$(echo "${CHANGED_COMPONENT}" | tr '/_' '--')
         echo -n "${clean_name}" > $(results.component-name.path)
 
-        # Sanitize gitrevision for image tag
-        tag="$(params.gitrevision)"
+        # Sanitize git-revision for image tag
+        tag="$(params.git-revision)"
         clean_tag=$(echo "${tag}" | tr '/' '-')
         echo -n "${clean_tag}" > $(results.image-tag.path)
         image="$(params.registry-path)/${clean_name}:${clean_tag}"

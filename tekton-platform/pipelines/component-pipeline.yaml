@@ -2,20 +2,38 @@ apiVersion: tekton.dev/v1beta1
 kind: Pipeline
 metadata:
   name: component-pipeline
-  namespace: saritasa-test
 spec:
   params:
     - name: component
       type: string
-    - name: gitrevision
+      description: The component/subdirectory to configure and build.
+    - name: git-revision
       type: string
-    - name: gitrepositoryurl
+      description: The git revision/sha to build.
+    - name: git-repository-url
       type: string
+      description: The git repository URL.
     - name: registry-path
       type: string
+      description: The target docker registry path.
     - name: action
       type: string
-      default: "build"
+      description: The action to perform (build or deploy).
+    - name: max-concurrency
+      type: string
+      description: Maximum number of concurrent PipelineRuns allowed in the namespace.
+    - name: namespace
+      type: string
+      description: The namespace to check active PipelineRuns in.
+    - name: container-name
+      type: string
+      description: The container name in the Deployment to patch.
+    - name: clone-depth
+      type: string
+      description: The depth of the git clone.
+    - name: delete-existing
+      type: string
+      description: Clean out the contents of the repo's destination directory if it already exists before cloning.
   workspaces:
     - name: source-workspace
       description: Workspace where source code is cloned and built.
@@ -28,6 +46,10 @@ spec:
       params:
         - name: pipelinerun-name
           value: $(context.pipelineRun.name)
+        - name: max-concurrency
+          value: $(params.max-concurrency)
+        - name: namespace
+          value: $(params.namespace)
     - name: git-clone
       runAfter:
         - check-concurrency
@@ -38,13 +60,13 @@ spec:
           workspace: source-workspace
       params:
         - name: url
-          value: "$(params.gitrepositoryurl)"
+          value: "$(params.git-repository-url)"
         - name: revision
-          value: "$(params.gitrevision)"
+          value: "$(params.git-revision)"
         - name: deleteExisting
-          value: "true"
+          value: "$(params.delete-existing)"
         - name: depth
-          value: "2"
+          value: "$(params.clone-depth)"
     - name: configure-component
       runAfter:
         - git-clone
@@ -54,8 +76,8 @@ spec:
       taskRef:
         name: configure-component
       params:
-        - name: gitrevision
-          value: "$(params.gitrevision)"
+        - name: git-revision
+          value: "$(params.git-revision)"
         - name: registry-path
           value: "$(params.registry-path)"
         - name: component
@@ -95,9 +117,13 @@ spec:
         - name: source
           workspace: source-workspace
       params:
-        - name: DEPLOYMENT_NAME
+        - name: deployment-name
           value: "$(tasks.configure-component.results.component-name)"
-        - name: IMAGE_NAME
+        - name: image-name
           value: "$(params.registry-path)/$(tasks.configure-component.results.component-name)"
-        - name: TAG
+        - name: tag
           value: "$(tasks.configure-component.results.image-tag)"
+        - name: container-name
+          value: "$(params.container-name)"
+        - name: namespace
+          value: "$(params.namespace)"

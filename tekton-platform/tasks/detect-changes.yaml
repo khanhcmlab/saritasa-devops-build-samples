@@ -2,16 +2,14 @@ apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
   name: detect-changes
-  namespace: saritasa-test
 spec:
   params:
-    - name: gitrevision
+    - name: git-revision
       type: string
       description: The git revision/sha to build.
     - name: registry-path
       type: string
       description: The target docker registry path.
-      default: "ghcr.io/dewwripper"
   workspaces:
     - name: source
       description: Workspace containing the cloned repository.
@@ -77,7 +75,7 @@ spec:
         CHANGED_COMPONENTS=""
         GIT_CHANGES=""
 
-        GITREVISION="$(params.gitrevision)"
+        GITREVISION="$(params.git-revision)"
         git fetch origin main:refs/remotes/origin/main --depth=100 2>/dev/null || true
         case "${GITREVISION}" in
           *pull/*|*refs/pull/*)

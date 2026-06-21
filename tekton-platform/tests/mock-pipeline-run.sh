@@ -27,10 +27,22 @@ cat <<EOF | kubectl apply -f -
               requests:
                 storage: 1Gi
     params:
-      - name: gitrevision
+      - name: git-revision
         value: "feature/test-ci-cd-2-changes"
-      - name: gitrepositoryurl
+      - name: git-repository-url
         value: "https://github.com/khanhcmlab/saritasa-devops-build-samples" 
       - name: action
         value: "build"
+      - name: registry-path
+        value: "ghcr.io/dewwripper"
+      - name: max-concurrency
+        value: "2"
+      - name: namespace
+        value: "saritasa-test"
+      - name: container-name
+        value: "app"
+      - name: clone-depth
+        value: "2"
+      - name: delete-existing
+        value: "true"
 EOF

@@ -91,20 +91,10 @@ To trigger pipeline builds automatically when code is pushed to GitHub, you need
 
 ## Installation & Deployment
 
-Apply the manifests in the following order:
+Deploy all platform resources (RBAC, Secrets, Tasks, Pipelines, and Triggers) in a single step using Kustomize:
 
 ```bash
-# 1. Setup RBAC and Secrets
-kubectl apply -f tekton-platform/base/
-
-# 2. Register Tasks
-kubectl apply -f tekton-platform/tasks/
-
-# 3. Register Pipelines
-kubectl apply -f tekton-platform/pipelines/
-
-# 4. Setup Webhook Triggers
-kubectl apply -f tekton-platform/triggers/
+kubectl apply -k tekton-platform/
 ```
 
 ---

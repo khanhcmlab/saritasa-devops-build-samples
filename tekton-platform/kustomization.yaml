@@ -1,0 +1,33 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: saritasa-test
+
+commonLabels:
+  app.kubernetes.io/name: tekton-platform
+  app.kubernetes.io/instance: tekton-platform
+  app.kubernetes.io/version: 1.0.0
+  app.kubernetes.io/component: infrastructure
+  app.kubernetes.io/part-of: saritasa-devops-build-samples
+  app.kubernetes.io/managed-by: kustomize
+
+resources:
+  # Base
+  - base/rbac.yaml
+  - base/sealed-gh-auth-secret.yaml
+  - base/sealed-gh-webhook-secret.yaml
+  - base/sealed-ghcr-secret.yaml
+  - base/triggers-webhook-service.yaml
+  # Pipelines
+  - pipelines/component-pipeline.yaml
+  - pipelines/orchestrator-pipeline.yaml
+  # Tasks
+  - tasks/check-concurrency.yaml
+  - tasks/configure-component.yaml
+  - tasks/detect-changes.yaml
+  - tasks/dispatch-pipelinerun.yaml
+  - tasks/patch-deployment.yaml
+  # Triggers
+  - triggers/event-listener.yaml
+  - triggers/github-binding.yaml
+  - triggers/trigger-template.yaml

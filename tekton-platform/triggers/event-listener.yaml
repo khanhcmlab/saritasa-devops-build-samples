@@ -2,7 +2,6 @@ apiVersion: triggers.tekton.dev/v1alpha1
 kind: EventListener
 metadata:
   name: gh-event-listener
-  namespace: saritasa-test
 spec:
   serviceAccountName: pipeline-service-account
   triggers:

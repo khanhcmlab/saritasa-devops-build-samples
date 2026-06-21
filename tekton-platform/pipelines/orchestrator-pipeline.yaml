@@ -2,23 +2,35 @@ apiVersion: tekton.dev/v1beta1
 kind: Pipeline
 metadata:
   name: orchestrator-pipeline
-  namespace: saritasa-test
 spec:
   params:
-    - name: gitrevision
+    - name: git-revision
       type: string
       description: The git revision/sha to build.
-    - name: gitrepositoryurl
+    - name: git-repository-url
       type: string
       description: The git repository URL.
     - name: action
       type: string
       description: The action to perform (build or deploy).
-      default: "build"
     - name: registry-path
       type: string
       description: The target docker registry path.
-      default: "ghcr.io/dewwripper"
+    - name: max-concurrency
+      type: string
+      description: Maximum number of concurrent PipelineRuns allowed in the namespace.
+    - name: namespace
+      type: string
+      description: The namespace to check active PipelineRuns in.
+    - name: container-name
+      type: string
+      description: The container name in the Deployment to patch.
+    - name: clone-depth
+      type: string
+      description: The depth of the git clone.
+    - name: delete-existing
+      type: string
+      description: Clean out the contents of the repo's destination directory if it already exists before cloning.
   workspaces:
     - name: source-workspace
       description: Shared workspace for cloning, change detection, and building.
@@ -29,6 +41,10 @@ spec:
       params:
         - name: pipelinerun-name
           value: $(context.pipelineRun.name)
+        - name: max-concurrency
+          value: $(params.max-concurrency)
+        - name: namespace
+          value: $(params.namespace)
     - name: git-clone
       runAfter:
         - check-concurrency
@@ -39,11 +55,11 @@ spec:
           workspace: source-workspace
       params:
         - name: url
-          value: "$(params.gitrepositoryurl)"
+          value: "$(params.git-repository-url)"
         - name: revision
-          value: "$(params.gitrevision)"
+          value: "$(params.git-revision)"
         - name: depth
-          value: "2"
+          value: "$(params.clone-depth)"
     - name: detect-changes
       runAfter:
         - git-clone
@@ -53,7 +69,7 @@ spec:
       taskRef:
         name: detect-changes
       params:
-        - name: gitrevision
+        - name: git-revision
           value: "$(tasks.git-clone.results.commit)"
         - name: registry-path
           value: "$(params.registry-path)"
@@ -66,16 +82,26 @@ spec:
           values: ["true"]
       matrix:
         params:
-          - name: COMPONENT
+          - name: component
             value: $(tasks.detect-changes.results.changed-modules-json[*])
       taskRef:
         name: dispatch-pipelinerun
       params:
-        - name: gitrevision
+        - name: git-revision
           value: "$(tasks.git-clone.results.commit)"
-        - name: gitrepositoryurl
-          value: "$(params.gitrepositoryurl)"
+        - name: git-repository-url
+          value: "$(params.git-repository-url)"
         - name: registry-path
           value: "$(params.registry-path)"
         - name: action
           value: "$(params.action)"
+        - name: max-concurrency
+          value: "$(params.max-concurrency)"
+        - name: namespace
+          value: "$(params.namespace)"
+        - name: container-name
+          value: "$(params.container-name)"
+        - name: clone-depth
+          value: "$(params.clone-depth)"
+        - name: delete-existing
+          value: "$(params.delete-existing)"
