@@ -74,7 +74,7 @@ spec:
       runAfter:
         - configure-component
       taskRef:
-        name: buildpacks-phases
+        name: buildpacks
       workspaces:
         - name: source
           workspace: source-workspace
@@ -85,13 +85,17 @@ spec:
           value: "$(tasks.configure-component.results.image)"
         - name: SOURCE_SUBPATH
           value: "$(tasks.configure-component.results.source-subpath)"
-        - name: CNB_BUILDER_IMAGE
+        - name: BUILDER_IMAGE
           value: "$(tasks.configure-component.results.builder)"
-        - name: CNB_PROCESS_TYPE
+        - name: PROCESS_TYPE
           value: "$(tasks.configure-component.results.process-type)"
-        - name: CNB_ENV_VARS
+        - name: ENV_VARS
           value:
             - "$(tasks.configure-component.results.env-vars[*])"
+        - name: USER_ID
+          value: "1001"
+        - name: GROUP_ID
+          value: "1000"
     - name: patch-deployment
       runAfter:
         - buildpacks

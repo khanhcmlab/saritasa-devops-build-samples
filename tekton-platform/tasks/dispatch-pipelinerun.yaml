@@ -160,18 +160,6 @@ spec:
             break
           elif [ "${STATUS}" = "False" ]; then
             echo "Child PipelineRun ${CHILD_RUN} failed with reason: ${REASON}."
-            PARENT_RUN="$(params.parent-pipelinerun)"
-            if [ -n "${PARENT_RUN}" ] && [ "${PARENT_RUN}" != "null" ]; then
-              echo "Cancelling other sibling component PipelineRuns for orchestrator run: ${PARENT_RUN}..."
-              kubectl get pipelinerun -n ${PARAM_NAMESPACE} -l orchestrator-pipelinerun=${PARENT_RUN} -o json 2>/dev/null | \
-                jq -r '.items[] | select(.status.conditions == null or ([.status.conditions[]? | select(.type == "Succeeded" and (.status == "True" or .status == "False"))] | length == 0)) | .metadata.name' 2>/dev/null | \
-                while read sibling; do
-                  if [ "${sibling}" != "${CHILD_RUN}" ]; then
-                    echo "Cancelling sibling child PipelineRun: ${sibling}..."
-                    kubectl patch pipelinerun "${sibling}" -n "${PARAM_NAMESPACE}" --type=merge -p '{"spec":{"status":"Cancelled"}}' || true
-                  fi
-                done
-            fi
             exit 1
           fi
 

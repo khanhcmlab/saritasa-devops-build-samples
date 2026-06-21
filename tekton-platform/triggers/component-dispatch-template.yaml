@@ -39,6 +39,8 @@ spec:
           orchestrator-pipelinerun: $(tt.params.parent-pipelinerun)
       spec:
         status: PipelineRunPending
+        timeouts:
+          pipeline: 10m
         serviceAccountName: pipeline-service-account
         pipelineRef:
           name: component-pipeline

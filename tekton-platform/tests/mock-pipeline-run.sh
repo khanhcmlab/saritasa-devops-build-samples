@@ -49,5 +49,5 @@ cat <<EOF | kubectl apply -f -
         value:
           - "web-servers/nginx-sample"
           - "web-servers/httpd-sample"
-          - "web-servers/no-config-file-sample"
+          - "nodejs/react-yarn"
 EOF
