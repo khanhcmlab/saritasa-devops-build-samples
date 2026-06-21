@@ -16,6 +16,7 @@ labels:
 resources:
   # Base
   - base/rbac.yaml
+  - base/shared-cache-pvc.yaml
   - base/sealed-gh-auth-secret.yaml
   - base/sealed-gh-webhook-secret.yaml
   - base/sealed-ghcr-secret.yaml

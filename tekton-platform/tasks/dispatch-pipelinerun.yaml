@@ -40,9 +40,14 @@ spec:
     - name: parent-pipelinerun
       type: string
       description: The name of the parent orchestrator PipelineRun.
+    - name: changed-modules
+      type: array
+      description: The list of changed modules to build.
   steps:
     - name: dispatch
       image: alpine/k8s:1.33.13
+      args:
+        - "$(params.changed-modules[*])"
       script: |
         #!/bin/sh
         set -e
@@ -51,31 +56,29 @@ spec:
         MAX_CONCURRENCY="$(params.max-concurrency)"
         COMPONENT_CLEAN=$(echo "$(params.component)" | tr '/_' '--')
 
-        # Function to get count of active component PipelineRuns
+        # Function to get count of active (running) component PipelineRuns
         get_active_count() {
           kubectl get pipelinerun -n ${PARAM_NAMESPACE} -o json 2>/dev/null | \
-            jq '[.items[] | select(.spec.pipelineRef.name == "component-pipeline") | select(.status.conditions == null or ([.status.conditions[]? | select(.type == "Succeeded" and (.status == "True" or .status == "False"))] | length == 0))] | length' 2>/dev/null || echo "0"
+            jq '[.items[] | select(.spec.pipelineRef.name == "component-pipeline") | select(.spec.status != "PipelineRunPending") | select(.status.conditions == null or ([.status.conditions[]? | select(.type == "Succeeded" and (.status == "True" or .status == "False"))] | length == 0))] | length' 2>/dev/null || echo "0"
         }
 
-        # Stagger check start to avoid race conditions in matrix execution
-        DELAY=$(echo -n "$(params.component)" | cksum | awk '{print $1 % 7}')
-        echo "Staggering concurrency check by ${DELAY} seconds..."
-        sleep ${DELAY}
+        # Find the index of the current component in the changed-modules list to stagger start
+        CURRENT_MODULE="$(params.component)"
 
-        # 1. Enforce concurrency limit before dispatching
-        while true; do
-          ACTIVE_COUNT=$(get_active_count)
-          echo "Current active component PipelineRuns: ${ACTIVE_COUNT} (max allowed: ${MAX_CONCURRENCY})"
-          if [ "${ACTIVE_COUNT}" -lt "${MAX_CONCURRENCY}" ]; then
-            echo "Under concurrency limit. Proceeding to dispatch..."
+        INDEX=0
+        for mod in "$@"; do
+          if [ "${mod}" = "${CURRENT_MODULE}" ]; then
             break
           fi
-          echo "Concurrency limit reached. Waiting 10 seconds..."
-          sleep 10
+          INDEX=$((INDEX + 1))
         done
 
-        # 2. Dispatch via EventListener
-        echo "Dispatching PipelineRun for component: $(params.component) (clean name: ${COMPONENT_CLEAN}) via EventListener..."
+        # 1. Stagger HTTP dispatch requests slightly to prevent API collisions
+        CURL_DELAY=$((INDEX * 1))
+        sleep ${CURL_DELAY}
+
+        # 2. Dispatch via EventListener (in Pending status by default)
+        echo "Dispatching pending PipelineRun for component: $(params.component) (clean name: ${COMPONENT_CLEAN}) via EventListener..."
 
         RESPONSE=$(curl -s -X POST \
           -H "Content-Type: application/json" \
@@ -119,9 +122,29 @@ spec:
           exit 1
         fi
 
-        echo "Successfully dispatched child PipelineRun: ${CHILD_RUN}"
+        echo "Successfully dispatched child PipelineRun: ${CHILD_RUN} (currently Pending)"
 
-        # 4. Wait for the child PipelineRun to complete
+        # 4. Stagger concurrency check to prevent race conditions during starting
+        STAGGER_DELAY=$((INDEX * 10))
+        echo "Staggering concurrency check by ${STAGGER_DELAY} seconds (index: ${INDEX})..."
+        sleep ${STAGGER_DELAY}
+
+        # 5. Enforce concurrency limit before starting execution
+        while true; do
+          ACTIVE_COUNT=$(get_active_count)
+          echo "Current active running component PipelineRuns: ${ACTIVE_COUNT} (max allowed: ${MAX_CONCURRENCY})"
+          if [ "${ACTIVE_COUNT}" -lt "${MAX_CONCURRENCY}" ]; then
+            break
+          fi
+          echo "Concurrency limit reached. Waiting 10 seconds..."
+          sleep 10
+        done
+
+        # 6. Start the pending child PipelineRun
+        echo "Starting pending child PipelineRun: ${CHILD_RUN}..."
+        kubectl patch pipelinerun "${CHILD_RUN}" -n "${PARAM_NAMESPACE}" --type=merge -p '{"spec":{"status":null}}'
+
+        # 7. Wait for the child PipelineRun to complete
         while true; do
           PIPELINERUN_JSON=$(kubectl get pipelinerun ${CHILD_RUN} -n ${PARAM_NAMESPACE} -o json 2>/dev/null || echo "{}")
           STATUS=$(echo "${PIPELINERUN_JSON}" | jq -r '.status.conditions[]? | select(.type == "Succeeded") | .status' 2>/dev/null || echo "null")
@@ -145,7 +168,7 @@ spec:
                 while read sibling; do
                   if [ "${sibling}" != "${CHILD_RUN}" ]; then
                     echo "Cancelling sibling child PipelineRun: ${sibling}..."
-                    kubectl patch pipelinerun "${sibling}" -n "${PARAM_NAMESPACE}" --type=merge -p '{"spec":{"status":"Cancelled"}}' 2>/dev/null || true
+                    kubectl patch pipelinerun "${sibling}" -n "${PARAM_NAMESPACE}" --type=merge -p '{"spec":{"status":"Cancelled"}}' || true
                   fi
                 done
             fi

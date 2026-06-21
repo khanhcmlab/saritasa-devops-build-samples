@@ -63,4 +63,8 @@ spec:
           value: "$(params.delete-existing)"
         - name: parent-pipelinerun
           value: "$(context.pipelineRun.name)"
+        - name: changed-modules
+          value:
+            - "$(params.changed-modules[*])"
+
 

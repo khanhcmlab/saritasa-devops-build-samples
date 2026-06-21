@@ -27,13 +27,18 @@ spec:
       description: The depth of the git clone.
     - name: delete-existing
       description: Clean out the contents of the repo's destination directory if it already exists before cloning.
+    - name: parent-pipelinerun
+      description: The name of the parent orchestrator PipelineRun.
   resourcetemplates:
     - apiVersion: tekton.dev/v1beta1
       kind: PipelineRun
       metadata:
         generateName: $(tt.params.component-clean)-pipelinerun-
         namespace: $(tt.params.namespace)
+        labels:
+          orchestrator-pipelinerun: $(tt.params.parent-pipelinerun)
       spec:
+        status: PipelineRunPending
         serviceAccountName: pipeline-service-account
         pipelineRef:
           name: component-pipeline
@@ -51,14 +56,8 @@ spec:
                   requests:
                     storage: 1Gi
           - name: cache
-            volumeClaimTemplate:
-              spec:
-                storageClassName: local-path
-                accessModes:
-                  - ReadWriteOnce
-                resources:
-                  requests:
-                    storage: 5Gi
+            persistentVolumeClaim:
+              claimName: shared-cache-pvc
         params:
           - name: component
             value: $(tt.params.component)

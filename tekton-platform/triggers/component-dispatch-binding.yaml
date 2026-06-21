@@ -27,3 +27,5 @@ spec:
       value: $(body.clone-depth)
     - name: delete-existing
       value: $(body.delete-existing)
+    - name: parent-pipelinerun
+      value: $(body.parent-pipelinerun)
