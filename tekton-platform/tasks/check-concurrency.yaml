@@ -3,6 +3,9 @@ kind: Task
 metadata:
   name: check-concurrency
 spec:
+  description: >-
+    Checks and manages PipelineRun concurrency limits. It queues incoming PipelineRuns
+    and waits if the number of active runs in the namespace exceeds max-concurrency.
   params:
     - name: pipelinerun-name
       type: string

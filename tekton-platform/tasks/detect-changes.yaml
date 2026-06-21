@@ -3,6 +3,9 @@ kind: Task
 metadata:
   name: detect-changes
 spec:
+  description: >-
+    Compares the current commit revision against the target/base branch or previous commit
+    to detect which components/subdirectories have changed, outputting a JSON array of changed modules.
   params:
     - name: git-revision
       type: string

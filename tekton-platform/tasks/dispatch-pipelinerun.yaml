@@ -3,6 +3,9 @@ kind: Task
 metadata:
   name: dispatch-pipelinerun
 spec:
+  description: >-
+    Dynamically creates/dispatches a downstream PipelineRun for a specific component
+    with its own workspaces, caches, and parameter parameters.
   params:
     - name: component
       type: string

@@ -3,6 +3,9 @@ kind: Task
 metadata:
   name: configure-component
 spec:
+  description: >-
+    Determines technology stack, configures build parameters (such as the target registry
+    image path and builder image), and ensures project.toml is present for Cloud Native Buildpacks.
   params:
     - name: git-revision
       type: string
