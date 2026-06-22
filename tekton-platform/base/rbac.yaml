@@ -23,6 +23,19 @@ rules:
       - watch
       - patch
       - update
+  - apiGroups: ["triggers.tekton.dev"]
+    resources:
+      - eventlisteners
+      - triggerbindings
+      - triggers
+      - clustertriggerbindings
+      - clusterinterceptors
+    verbs:
+      - get
+      - list
+      - watch
+      - update
+      - patch  
   - apiGroups: ["apps"]
     resources:
       - deployments
@@ -62,27 +75,27 @@ roleRef:
   kind: Role
   name: pipeline-role
   apiGroup: rbac.authorization.k8s.io
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: pipeline-eventlistener-role-binding
-subjects:
-  - kind: ServiceAccount
-    name: pipeline-service-account
-roleRef:
-  kind: ClusterRole
-  name: tekton-triggers-eventlistener-roles
-  apiGroup: rbac.authorization.k8s.io
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: pipeline-cluster-role-binding
-subjects:
-  - kind: ServiceAccount
-    name: pipeline-service-account
-roleRef:
-  kind: ClusterRole
-  name: tekton-triggers-eventlistener-clusterroles
-  apiGroup: rbac.authorization.k8s.io
+# ---
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: RoleBinding
+# metadata:
+#   name: pipeline-eventlistener-role-binding
+# subjects:
+#   - kind: ServiceAccount
+#     name: pipeline-service-account
+# roleRef:
+#   kind: ClusterRole
+#   name: tekton-triggers-eventlistener-roles
+#   apiGroup: rbac.authorization.k8s.io
+# ---
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: ClusterRoleBinding
+# metadata:
+#   name: pipeline-cluster-role-binding
+# subjects:
+#   - kind: ServiceAccount
+#     name: pipeline-service-account
+# roleRef:
+#   kind: ClusterRole
+#   name: tekton-triggers-eventlistener-clusterroles
+#   apiGroup: rbac.authorization.k8s.io
