@@ -45,6 +45,8 @@ cat <<EOF | kubectl apply -f -
         value: "2"
       - name: delete-existing
         value: "true"
+      - name: timeout
+        value: "5m"
       - name: changed-modules
         value:
           - "web-servers/nginx-sample"

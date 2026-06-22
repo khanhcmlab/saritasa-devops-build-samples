@@ -29,6 +29,9 @@ spec:
       description: Clean out the contents of the repo's destination directory if it already exists before cloning.
     - name: parent-pipelinerun
       description: The name of the parent orchestrator PipelineRun.
+    - name: timeout
+      description: The timeout for the child PipelineRun.
+      default: "5m"
   resourcetemplates:
     - apiVersion: tekton.dev/v1beta1
       kind: PipelineRun
@@ -40,7 +43,7 @@ spec:
       spec:
         status: PipelineRunPending
         timeouts:
-          pipeline: 10m
+          pipeline: $(tt.params.timeout)
         serviceAccountName: pipeline-service-account
         pipelineRef:
           name: component-pipeline

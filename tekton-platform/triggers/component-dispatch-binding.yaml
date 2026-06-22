@@ -29,3 +29,5 @@ spec:
       value: $(body.delete-existing)
     - name: parent-pipelinerun
       value: $(body.parent-pipelinerun)
+    - name: timeout
+      value: $(body.timeout)

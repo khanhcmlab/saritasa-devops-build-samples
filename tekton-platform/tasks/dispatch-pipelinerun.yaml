@@ -43,6 +43,10 @@ spec:
     - name: changed-modules
       type: array
       description: The list of changed modules to build.
+    - name: timeout
+      type: string
+      description: The timeout for the component pipeline
+      default: "5m"
   steps:
     - name: dispatch
       image: alpine/k8s:1.33.13
@@ -94,7 +98,8 @@ spec:
             "container-name": "$(params.container-name)",
             "clone-depth": "$(params.clone-depth)",
             "delete-existing": "$(params.delete-existing)",
-            "parent-pipelinerun": "$(params.parent-pipelinerun)"
+            "parent-pipelinerun": "$(params.parent-pipelinerun)",
+            "timeout": "$(params.timeout)"
           }' \
           "http://el-gh-event-listener.${PARAM_NAMESPACE}.svc.cluster.local:8080")
 

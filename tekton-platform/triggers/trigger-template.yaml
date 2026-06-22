@@ -25,6 +25,9 @@ spec:
       description: Clean out the contents of the repo's destination directory if it already exists before cloning.
     - name: changed-modules
       description: The list of changed modules to build.
+    - name: timeout
+      description: The timeout for the component pipelines
+      default: "5m"
   resourcetemplates:
     - apiVersion: tekton.dev/v1beta1
       kind: PipelineRun
@@ -58,5 +61,7 @@ spec:
             value: $(tt.params.delete-existing)
           - name: changed-modules
             value: $(tt.params.changed-modules)
+          - name: timeout
+            value: $(tt.params.timeout)
 
 
