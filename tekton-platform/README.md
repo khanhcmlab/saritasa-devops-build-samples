@@ -32,91 +32,95 @@ flowchart TD
     %% Input / Events
     GitHub[GitHub Push Event] -->|HTTP POST JSON Payload| Webhook[Cloudflare Tunnel / ExternalName SVC]
     Webhook -->|JSON Payload| EL[EventListener: gh-event-listener]
-    
+
     %% Webhook Triggers Processing
-    EL -->|1. Overlays: changed_modules via CEL interceptor| EL
-    EL -->|2. Maps to parameters| Bind1[TriggerBinding: github-merge-binding]
-    Bind1 -->|3. Resolves to Template| Temp1[TriggerTemplate: trigger-template]
-    Temp1 -->|4. Spawns with changed-modules param| PR1[PipelineRun: orchestrator-pipelinerun]
+    EL -->|1. Validates secret & extracts changed files| GH_Int[GitHub Interceptor]
+    GH_Int -->|2. Computes changed_modules overlay| CEL_Int[CEL Interceptor]
+    CEL_Int -->|3. Maps to parameters| Bind1[TriggerBinding: github-merge-binding]
+    Bind1 -->|4. Resolves to template| Temp1[TriggerTemplate: trigger-template]
+    Temp1 -->|5. Spawns| PR1[PipelineRun: orchestrator-pipelinerun]
 
     %% Orchestrator Pipeline
-    subgraph Orchestrator Pipeline [Orchestrator Pipeline Flow]
-        PR1 -->|Starts| Pipe1[Pipeline: orchestrator-pipeline]
-        Pipe1 -->|Matrix over changed-modules| Task_Dispatch[Task: dispatch-pipelinerun]
-        
-        %% Concurrency / Matrix Dispatching
-        subgraph Matrix Dispatch Loop [Matrix Dispatch per Changed Component]
-            Task_Dispatch -->|Step 1: Stagger delay & HTTP POST| DispReq[dispatch-request Step]
-            DispReq -->|Triggers component event| EL_Child[EventListener: gh-event-listener]
-            DispReq -->|Writes eventID to shared volume| FindChild[find-child-pipelinerun Step]
-            FindChild -->|Finds child PipelineRun name| WaitLimit[wait-concurrency-limit Step]
-            WaitLimit -->|Checks active component runs against max-concurrency| StartChild[start-pipelinerun Step]
-            StartChild -->|Patches status = null| TriggerPR([Trigger Component PipelineRun])
-            StartChild -->|Starts child run| MonitorChild[monitor-pipelinerun Step]
-            MonitorChild -->|Polls status until finished| MonitorEnd([End component build])
+    subgraph Orchestrator Pipeline
+        PR1 --> Pipe1[Pipeline: orchestrator-pipeline]
+        Pipe1 -->|Inline task| ParseModules[Task: parse-changed-modules]
+        ParseModules -->|Matrix over parsed array| Task_Dispatch[Task: dispatch-pipelinerun]
+
+        subgraph dispatch-pipelinerun Steps
+            Task_Dispatch --> DispReq[1. dispatch-request]
+            DispReq -->|HTTP POST to EventListener| EL_Child[EventListener: gh-event-listener]
+            DispReq -->|Writes eventID| FindChild[2. find-child-pipelinerun]
+            FindChild -->|Discovers child name| WaitSlot[3. wait-concurrency-slot]
+            WaitSlot -->|Polls active count vs max-concurrency| StartChild[4. start-pipelinerun]
+            StartChild -->|Patches spec.status=null| MonitorChild[5. monitor-pipelinerun]
+            MonitorChild -->|Polls until Succeeded=True/False| End([Done])
         end
     end
 
-    %% Flow Styling
-    classDef pipeline fill:#1A365D,stroke:#3182CE,stroke-width:2px,color:#fff;
-    classDef task fill:#2D3748,stroke:#4A5568,stroke-width:1px,color:#fff;
-    classDef trigger fill:#2C5282,stroke:#2B6CB0,stroke-width:1.5px,color:#fff;
-    classDef input fill:#22543D,stroke:#2F855A,stroke-width:2px,color:#fff;
+    %% Styling
+    classDef pipeline fill:#1A365D,stroke:#3182CE,stroke-width:2px,color:#fff
+    classDef task fill:#2D3748,stroke:#4A5568,stroke-width:1px,color:#fff
+    classDef trigger fill:#2C5282,stroke:#2B6CB0,stroke-width:1.5px,color:#fff
+    classDef input fill:#22543D,stroke:#2F855A,stroke-width:2px,color:#fff
 
-    class PR1,Pipe1 pipeline;
-    class Task_Dispatch task;
-    class EL,Bind1,Temp1 trigger;
-    class GitHub,Webhook input;
+    class PR1,Pipe1 pipeline
+    class Task_Dispatch,ParseModules task
+    class EL,GH_Int,CEL_Int,Bind1,Temp1 trigger
+    class GitHub,Webhook input
 ```
 
 ### 2. Component Pipeline Flow
-This stage runs for each individual changed component. It configures component-specific build variables, packages the app with Paketo buildpacks, and deploys it to the cluster (updating images and validating rollouts matching the `deployment-timeout` configuration).
+This stage runs for each individual changed component. It configures component-specific build variables, packages the app with Paketo buildpacks, and optionally deploys it to the cluster when `action=deploy`.
 
 ```mermaid
 flowchart TD
     %% Input Event from dispatch-pipelinerun
-    DispReq[Orchestrator dispatch-request Step] -->|HTTP POST| EL_Child[EventListener: gh-event-listener]
-    
-    %% Webhook Triggers Processing
-    EL_Child -->|Intercepts component-dispatch event| Bind2[TriggerBinding: component-dispatch-binding]
-    Bind2 -->|Parameters: component, timeout, deployment-timeout| Temp2[TriggerTemplate: component-dispatch-template]
-    Temp2 -->|Spawns in PENDING status| PR2[PipelineRun: component-pipeline-run]
+    DispReq[Orchestrator: dispatch-request step] -->|HTTP POST| EL_Child[EventListener: gh-event-listener]
 
-    %% Component Pipeline (Child Run)
-    subgraph Component Pipeline [Component Pipeline Flow]
-        PR2 -->|Starts| Pipe2[Pipeline: component-pipeline]
-        Pipe2 -->|Step 1| Task_Clone2[Task: git-clone]
-        Task_Clone2 -->|Step 2| Task_Config[Task: configure-component]
-        
-        subgraph Configure Steps [configure-component Task Steps]
-            Task_Config --> Config_Cache[create-cache-dir]
-            Config_Cache --> Config_Metadata[prepare-metadata]
-            Config_Metadata --> Config_Builder[select-builder]
-            Config_Builder --> Config_Toml[ensure-project-toml]
-            Config_Toml --> Config_Env[parse-env-vars]
-            Config_Env --> Config_Proc[output-process-type]
+    %% Webhook Triggers Processing
+    EL_Child -->|Intercepts X-Event-Type: component-dispatch| CEL[CEL Interceptor]
+    CEL -->|Computes component_clean overlay| Bind2[TriggerBinding: component-dispatch-binding]
+    Bind2 -->|Parameters| Temp2[TriggerTemplate: component-dispatch-template]
+    Temp2 -->|Spawns in PipelineRunPending status| PR2[PipelineRun: component-pipelinerun]
+
+    %% Component Pipeline
+    subgraph Component Pipeline
+        PR2 --> Pipe2[Pipeline: component-pipeline]
+        Pipe2 --> Task_Clone[Task: git-clone]
+        Task_Clone --> Task_Config[Task: configure-component]
+
+        subgraph configure-component Steps
+            Task_Config --> Step_Cache[1. create-cache-dir]
+            Step_Cache --> Step_Meta[2. prepare-metadata]
+            Step_Meta --> Step_Builder[3. select-builder]
+            Step_Builder --> Step_Toml[4. ensure-project-toml]
+            Step_Toml --> Step_Env[5. parse-env-vars]
+            Step_Env --> Step_Proc[6. output-process-type]
         end
-        
-        Task_Config -->|Configures environment/builder| Task_BP[Task: buildpacks]
-        Task_BP -->|Builds application image using Paketo| Task_Deploy[Task: patch-deployment]
-        
-        subgraph Deployment Rollout [patch-deployment Task Steps]
-            Task_Deploy --> Deploy_Create[create-deployment step]
-            Deploy_Create -->|Checks & Creates Deployment if missing| Deploy_Patch[patch-deployment step]
-            Deploy_Patch -->|kubectl set image & monitors rollout with deployment-timeout| DeployEnd([Completed Rollout])
+
+        Task_Config -->|builder, image, env-vars, process-type| Task_BP[Task: buildpacks]
+        Task_BP -->|Builds OCI image via Paketo| Task_Deploy{action == deploy?}
+        Task_Deploy -->|Yes| Task_Patch[Task: patch-deployment]
+
+        subgraph patch-deployment Steps
+            Task_Patch --> Deploy_Create[1. create-deployment]
+            Deploy_Create -->|Creates Deployment if missing| Deploy_Patch[2. patch-deployment]
+            Deploy_Patch -->|kubectl set image + rollout status| DeployEnd([Rollout Complete])
         end
     end
 
-    %% Flow Styling
-    classDef pipeline fill:#1A365D,stroke:#3182CE,stroke-width:2px,color:#fff;
-    classDef task fill:#2D3748,stroke:#4A5568,stroke-width:1px,color:#fff;
-    classDef trigger fill:#2C5282,stroke:#2B6CB0,stroke-width:1.5px,color:#fff;
-    classDef input fill:#22543D,stroke:#2F855A,stroke-width:2px,color:#fff;
+    %% Styling
+    classDef pipeline fill:#1A365D,stroke:#3182CE,stroke-width:2px,color:#fff
+    classDef task fill:#2D3748,stroke:#4A5568,stroke-width:1px,color:#fff
+    classDef trigger fill:#2C5282,stroke:#2B6CB0,stroke-width:1.5px,color:#fff
+    classDef input fill:#22543D,stroke:#2F855A,stroke-width:2px,color:#fff
+    classDef decision fill:#744210,stroke:#D69E2E,stroke-width:2px,color:#fff
 
-    class PR2,Pipe2 pipeline;
-    class Task_Clone2,Task_Config,Task_BP,Task_Deploy task;
-    class EL_Child,Bind2,Temp2 trigger;
-    class DispReq input;
+    class PR2,Pipe2 pipeline
+    class Task_Clone,Task_Config,Task_BP,Task_Patch task
+    class EL_Child,CEL,Bind2,Temp2 trigger
+    class DispReq input
+    class Task_Deploy decision
 ```
 
 ---
