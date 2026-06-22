@@ -4,8 +4,11 @@ metadata:
   name: dispatch-pipelinerun
 spec:
   description: >-
-    Dispatches a downstream PipelineRun for a specific component by posting an HTTP request
-    to the EventListener, which uses a TriggerTemplate to spawn it.
+    Dispatches a child PipelineRun for a component via the EventListener, waits
+    for a concurrency slot, starts it, and monitors it until completion.
+
+    Flow: dispatch-request -> find-child -> wait-concurrency -> start -> monitor
+
   params:
     - name: component
       type: string
@@ -24,10 +27,10 @@ spec:
       description: The action to perform (build or deploy).
     - name: max-concurrency
       type: string
-      description: Maximum number of concurrent PipelineRuns allowed in the namespace.
+      description: Maximum number of concurrent PipelineRuns allowed.
     - name: namespace
       type: string
-      description: The namespace to check active PipelineRuns in.
+      description: The namespace for all PipelineRun operations.
     - name: container-name
       type: string
       description: The container name in the Deployment to patch.
@@ -36,19 +39,19 @@ spec:
       description: The depth of the git clone.
     - name: delete-existing
       type: string
-      description: Clean out the contents of the repo's destination directory if it already exists before cloning.
+      description: Whether to clean the repo destination before cloning.
     - name: parent-pipelinerun
       type: string
       description: The name of the parent orchestrator PipelineRun.
     - name: changed-modules
       type: array
-      description: The list of changed modules to build.
+      description: The ordered list of changed modules (used for stagger index).
     - name: timeout
       type: string
-      description: The timeout for the component pipeline
+      description: The timeout for the component pipeline.
     - name: deployment-timeout
       type: string
-      description: The timeout for the deployment rollout check
+      description: The timeout for the deployment rollout check.
 
   steps:
     - name: dispatch-request
@@ -62,26 +65,24 @@ spec:
         #!/bin/sh
         set -e
 
-        PARAM_NAMESPACE="$(params.namespace)"
-        CURRENT_MODULE="$(params.component)"
+        NAMESPACE="$(params.namespace)"
+        COMPONENT="$(params.component)"
+        EVENT_LISTENER_URL="http://el-gh-event-listener.${NAMESPACE}.svc.cluster.local:8080"
 
+        # Determine this module's position in the changed-modules list
         INDEX=0
         for mod in "$@"; do
-          if [ "${mod}" = "${CURRENT_MODULE}" ]; then
-            break
-          fi
+          [ "${mod}" = "${COMPONENT}" ] && break
           INDEX=$((INDEX + 1))
         done
 
-        # Stagger HTTP dispatch requests slightly to prevent API collisions
-        CURL_DELAY=$((INDEX * 1))
-        echo "Staggering HTTP dispatch by ${CURL_DELAY} seconds (index: ${INDEX})..."
-        sleep ${CURL_DELAY}
+        # Stagger requests by 1 second per module to avoid API collisions
+        echo "Staggering dispatch by ${INDEX}s (module index: ${INDEX})..."
+        sleep "${INDEX}"
 
-        COMPONENT_CLEAN=$(echo "$(params.component)" | tr '/_' '--')
-        echo "Dispatching pending PipelineRun for component: $(params.component) (clean name: ${COMPONENT_CLEAN}) via EventListener..."
+        echo "Dispatching PipelineRun for component: ${COMPONENT}..."
 
-        RESPONSE=$(curl -s -X POST \
+        RESPONSE=$(curl -sf -X POST \
           -H "Content-Type: application/json" \
           -H "X-Event-Type: component-dispatch" \
           -d '{
@@ -99,18 +100,20 @@ spec:
             "timeout": "$(params.timeout)",
             "deployment-timeout": "$(params.deployment-timeout)"
           }' \
-          "http://el-gh-event-listener.${PARAM_NAMESPACE}.svc.cluster.local:8080")
+          "${EVENT_LISTENER_URL}") || {
+          echo "Error: EventListener request failed."
+          exit 1
+        }
 
-        EVENT_ID=$(echo "${RESPONSE}" | jq -r '.eventID' 2>/dev/null || true)
+        EVENT_ID=$(echo "${RESPONSE}" | jq -r '.eventID // empty')
 
-        if [ -z "${EVENT_ID}" ] || [ "${EVENT_ID}" = "null" ]; then
-          echo "Error: Failed to obtain eventID from EventListener response."
-          echo "Response was: ${RESPONSE}"
+        if [ -z "${EVENT_ID}" ]; then
+          echo "Error: No eventID in response: ${RESPONSE}"
           exit 1
         fi
 
         echo -n "${EVENT_ID}" > /shared/event_id
-        echo "Event ID ${EVENT_ID} written to shared volume."
+        echo "Dispatched. Event ID: ${EVENT_ID}"
 
     - name: find-child-pipelinerun
       image: alpine/k8s:1.33.13
@@ -121,38 +124,36 @@ spec:
         #!/bin/sh
         set -e
 
-        PARAM_NAMESPACE="$(params.namespace)"
-        EVENT_ID=$(cat /shared/event_id 2>/dev/null || echo "")
+        NAMESPACE="$(params.namespace)"
+        TIMEOUT="$(params.deployment-timeout)"
+        EVENT_ID=$(cat /shared/event_id)
+        LABEL="triggers.tekton.dev/triggers-eventid=${EVENT_ID}"
 
         if [ -z "${EVENT_ID}" ]; then
-          echo "Error: Event ID not found"
+          echo "Error: Event ID not found in /shared/event_id"
           exit 1
         fi
 
-        kubectl wait pipelinerun \
-          -n "${PARAM_NAMESPACE}" \
-          -l "triggers.tekton.dev/triggers-eventid=${EVENT_ID}" \
-          --for=create \
-          --timeout=$(params.deployment-timeout) >/dev/null 2>&1
-        
-        if [ $? -ne 0 ]; then
-          echo "Error: Failed to find child PipelineRun with eventID: ${EVENT_ID} after 30 seconds."
+        echo "Waiting for child PipelineRun with label: ${LABEL}..."
+
+        if ! kubectl wait pipelinerun -n "${NAMESPACE}" -l "${LABEL}" \
+          --for=create --timeout="${TIMEOUT}" >/dev/null 2>&1; then
+          echo "Error: Child PipelineRun not created within ${TIMEOUT}."
           exit 1
         fi
 
-        CHILD_RUN=$(kubectl get pipelinerun -n "${PARAM_NAMESPACE}" \
-          -l "triggers.tekton.dev/triggers-eventid=${EVENT_ID}" \
-          -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+        CHILD_RUN=$(kubectl get pipelinerun -n "${NAMESPACE}" -l "${LABEL}" \
+          -o jsonpath='{.items[0].metadata.name}')
 
-        if [[ -z "${CHILD_RUN}" || "${CHILD_RUN}" == "null" ]]; then
-          echo "Error: Resource disappeared right after creation."
+        if [ -z "${CHILD_RUN}" ] || [ "${CHILD_RUN}" = "null" ]; then
+          echo "Error: Child PipelineRun disappeared after creation."
           exit 1
         fi
 
         echo -n "${CHILD_RUN}" > /shared/child_run
-        echo "Successfully dispatched child PipelineRun: ${CHILD_RUN} (currently Pending)"
+        echo "Found child PipelineRun: ${CHILD_RUN} (Pending)"
 
-    - name: wait-concurrency-limit
+    - name: wait-concurrency-slot
       image: alpine/k8s:1.33.13
       args:
         - "$(params.changed-modules[*])"
@@ -163,38 +164,48 @@ spec:
         #!/bin/sh
         set -e
 
-        PARAM_NAMESPACE="$(params.namespace)"
+        NAMESPACE="$(params.namespace)"
         MAX_CONCURRENCY="$(params.max-concurrency)"
-        CURRENT_MODULE="$(params.component)"
+        COMPONENT="$(params.component)"
+        POLL_INTERVAL=10
 
+        # Determine this module's position for staggered checking
         INDEX=0
         for mod in "$@"; do
-          if [ "${mod}" = "${CURRENT_MODULE}" ]; then
-            break
-          fi
+          [ "${mod}" = "${COMPONENT}" ] && break
           INDEX=$((INDEX + 1))
         done
 
-        # Stagger concurrency check to prevent race conditions during starting
-        STAGGER_DELAY=$((INDEX * 10))
-        echo "Staggering concurrency check by ${STAGGER_DELAY} seconds (index: ${INDEX})..."
-        sleep ${STAGGER_DELAY}
+        STAGGER_DELAY=$((INDEX * POLL_INTERVAL))
+        echo "Staggering concurrency check by ${STAGGER_DELAY}s (module index: ${INDEX})..."
+        sleep "${STAGGER_DELAY}"
 
-        # Function to get count of active (running) component PipelineRuns
+        # Count PipelineRuns that reference "component-pipeline" and have not
+        # yet reached a terminal state (Succeeded != True/False).
         get_active_count() {
-          kubectl get pipelinerun -n ${PARAM_NAMESPACE} -o json 2>/dev/null | \
-            jq '[.items[] | select(.spec.pipelineRef.name == "component-pipeline") | select(.spec.status != "PipelineRunPending") | select(.status.conditions == null or ([.status.conditions[]? | select(.type == "Succeeded" and (.status == "True" or .status == "False"))] | length == 0))] | length' 2>/dev/null || echo "0"
+          kubectl get pipelinerun -n "${NAMESPACE}" -o json 2>/dev/null | jq '
+            [.items[] |
+              select(.spec.pipelineRef.name == "component-pipeline") |
+              select(
+                (.status.conditions // [] | map(select(.type == "Succeeded"))[0].status // "Unknown")
+                as $s | $s != "True" and $s != "False"
+              )
+            ] | length
+          '
         }
 
-        # Enforce concurrency limit before starting execution
+        # Poll until a concurrency slot is available
         while true; do
-          ACTIVE_COUNT=$(get_active_count)
-          echo "Current active running component PipelineRuns: ${ACTIVE_COUNT} (max allowed: ${MAX_CONCURRENCY})"
-          if [ "${ACTIVE_COUNT}" -lt "${MAX_CONCURRENCY}" ]; then
+          ACTIVE=$(get_active_count)
+          echo "Active PipelineRuns: ${ACTIVE} / ${MAX_CONCURRENCY}"
+
+          if [ "${ACTIVE}" -lt "${MAX_CONCURRENCY}" ]; then
+            echo "Concurrency slot available. Proceeding."
             break
           fi
-          echo "Concurrency limit reached. Waiting 10 seconds..."
-          sleep 10
+
+          echo "Concurrency limit reached. Retrying in ${POLL_INTERVAL}s..."
+          sleep "${POLL_INTERVAL}"
         done
 
     - name: start-pipelinerun
@@ -206,17 +217,17 @@ spec:
         #!/bin/sh
         set -e
 
-        PARAM_NAMESPACE="$(params.namespace)"
+        NAMESPACE="$(params.namespace)"
         CHILD_RUN=$(cat /shared/child_run)
 
         if [ -z "${CHILD_RUN}" ]; then
-          echo "Error: Child PipelineRun name not found in /shared/child_run."
+          echo "Error: Child PipelineRun name not found."
           exit 1
         fi
 
-        # Start the pending child PipelineRun
-        echo "Starting pending child PipelineRun: ${CHILD_RUN}..."
-        kubectl patch pipelinerun "${CHILD_RUN}" -n "${PARAM_NAMESPACE}" --type=merge -p '{"spec":{"status":null}}'
+        echo "Starting child PipelineRun: ${CHILD_RUN}..."
+        kubectl patch pipelinerun "${CHILD_RUN}" -n "${NAMESPACE}" \
+          --type=merge -p '{"spec":{"status":null}}'
 
     - name: monitor-pipelinerun
       image: alpine/k8s:1.33.13
@@ -227,35 +238,38 @@ spec:
         #!/bin/sh
         set -e
 
-        PARAM_NAMESPACE="$(params.namespace)"
+        NAMESPACE="$(params.namespace)"
         CHILD_RUN=$(cat /shared/child_run)
+        POLL_INTERVAL=10
 
         if [ -z "${CHILD_RUN}" ]; then
-          echo "Error: Child PipelineRun name not found in /shared/child_run."
+          echo "Error: Child PipelineRun name not found."
           exit 1
         fi
 
-        # Wait for the child PipelineRun to complete
+        echo "Monitoring child PipelineRun: ${CHILD_RUN}..."
+
+        get_status() {
+          kubectl get pipelinerun "${CHILD_RUN}" -n "${NAMESPACE}" -o json 2>/dev/null | \
+            jq -r '(.status.conditions // [] | map(select(.type == "Succeeded"))[0].status) // "Unknown"'
+        }
+
+        get_reason() {
+          kubectl get pipelinerun "${CHILD_RUN}" -n "${NAMESPACE}" -o json 2>/dev/null | \
+            jq -r '(.status.conditions // [] | map(select(.type == "Succeeded"))[0].reason) // "Unknown"'
+        }
+
         while true; do
-          PIPELINERUN_JSON=$(kubectl get pipelinerun ${CHILD_RUN} -n ${PARAM_NAMESPACE} -o json 2>/dev/null || echo "{}")
-          STATUS=$(echo "${PIPELINERUN_JSON}" | jq -r '.status.conditions[]? | select(.type == "Succeeded") | .status' 2>/dev/null || echo "null")
-          REASON=$(echo "${PIPELINERUN_JSON}" | jq -r '.status.conditions[]? | select(.type == "Succeeded") | .reason' 2>/dev/null || echo "null")
+          STATUS=$(get_status)
+          REASON=$(get_reason)
 
-          # Handle the case where status is not yet populated
-          if [ -z "${STATUS}" ] || [ "${STATUS}" = "null" ]; then
-            STATUS="Unknown"
-          fi
+          case "${STATUS}" in
+            True)  echo "Child PipelineRun ${CHILD_RUN} succeeded!"; exit 0 ;;
+            False) echo "Child PipelineRun ${CHILD_RUN} failed. Reason: ${REASON}"; exit 1 ;;
+            *)     echo "Still running (status: ${STATUS}, reason: ${REASON}). Polling in ${POLL_INTERVAL}s..." ;;
+          esac
 
-          if [ "${STATUS}" = "True" ]; then
-            echo "Child PipelineRun ${CHILD_RUN} completed successfully!"
-            break
-          elif [ "${STATUS}" = "False" ]; then
-            echo "Child PipelineRun ${CHILD_RUN} failed with reason: ${REASON}."
-            exit 1
-          fi
-
-          echo "Child PipelineRun ${CHILD_RUN} is still running (status: ${STATUS}, reason: ${REASON}). Waiting 10 seconds..."
-          sleep 10
+          sleep "${POLL_INTERVAL}"
         done
 
   volumes:
