@@ -122,25 +122,30 @@ spec:
         set -e
 
         PARAM_NAMESPACE="$(params.namespace)"
-        EVENT_ID=$(cat /shared/event_id)
+        EVENT_ID=$(cat /shared/event_id 2>/dev/null || echo "")
 
         if [ -z "${EVENT_ID}" ]; then
-          echo "Error: Event ID not found in /shared/event_id."
+          echo "Error: Event ID not found"
           exit 1
         fi
 
-        echo "Waiting for child PipelineRun with eventID ${EVENT_ID} to be created..."
-        CHILD_RUN=""
-        for i in $(seq 1 30); do
-          CHILD_RUN=$(kubectl get pipelinerun -n ${PARAM_NAMESPACE} -l triggers.tekton.dev/triggers-eventid=${EVENT_ID} -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
-          if [ -n "${CHILD_RUN}" ] && [ "${CHILD_RUN}" != "null" ]; then
-            break
-          fi
-          sleep 1
-        done
-
-        if [ -z "${CHILD_RUN}" ] || [ "${CHILD_RUN}" = "null" ]; then
+        kubectl wait pipelinerun \
+          -n "${PARAM_NAMESPACE}" \
+          -l "triggers.tekton.dev/triggers-eventid=${EVENT_ID}" \
+          --for=create \
+          --timeout=$(params.deployment-timeout) >/dev/null 2>&1
+        
+        if [ $? -ne 0 ]; then
           echo "Error: Failed to find child PipelineRun with eventID: ${EVENT_ID} after 30 seconds."
+          exit 1
+        fi
+
+        CHILD_RUN=$(kubectl get pipelinerun -n "${PARAM_NAMESPACE}" \
+          -l "triggers.tekton.dev/triggers-eventid=${EVENT_ID}" \
+          -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+
+        if [[ -z "${CHILD_RUN}" || "${CHILD_RUN}" == "null" ]]; then
+          echo "Error: Resource disappeared right after creation."
           exit 1
         fi
 
