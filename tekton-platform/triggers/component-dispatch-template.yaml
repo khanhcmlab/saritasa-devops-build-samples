@@ -31,6 +31,8 @@ spec:
       description: The name of the parent orchestrator PipelineRun.
     - name: timeout
       description: The timeout for the child PipelineRun.
+    - name: deployment-timeout
+      description: The timeout for the deployment rollout check
   resourcetemplates:
     - apiVersion: tekton.dev/v1beta1
       kind: PipelineRun
@@ -83,3 +85,5 @@ spec:
             value: $(tt.params.clone-depth)
           - name: delete-existing
             value: $(tt.params.delete-existing)
+          - name: deployment-timeout
+            value: $(tt.params.deployment-timeout)

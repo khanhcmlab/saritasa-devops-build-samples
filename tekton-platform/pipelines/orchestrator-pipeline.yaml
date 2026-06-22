@@ -37,6 +37,9 @@ spec:
     - name: timeout
       type: string
       description: The timeout for the component pipelines
+    - name: deployment-timeout
+      type: string
+      description: The timeout for the deployment rollout check
   tasks:
     - name: dispatch-pipelineruns
       matrix:
@@ -71,5 +74,7 @@ spec:
             - "$(params.changed-modules[*])"
         - name: timeout
           value: "$(params.timeout)"
+        - name: deployment-timeout
+          value: "$(params.deployment-timeout)"
 
 

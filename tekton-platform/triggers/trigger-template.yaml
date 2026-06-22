@@ -26,6 +26,8 @@ spec:
       description: The list of changed modules to build.
     - name: timeout
       description: The timeout for the component pipelines
+    - name: deployment-timeout
+      description: The timeout for the deployment rollout check
   resourcetemplates:
     - apiVersion: tekton.dev/v1beta1
       kind: PipelineRun
@@ -61,5 +63,7 @@ spec:
             value: $(tt.params.changed-modules)
           - name: timeout
             value: $(tt.params.timeout)
+          - name: deployment-timeout
+            value: $(tt.params.deployment-timeout)
 
 

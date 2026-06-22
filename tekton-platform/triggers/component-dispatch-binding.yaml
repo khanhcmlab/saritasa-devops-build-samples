@@ -31,3 +31,5 @@ spec:
       value: $(body.parent-pipelinerun)
     - name: timeout
       value: $(body.timeout)
+    - name: deployment-timeout
+      value: $(body.deployment-timeout)

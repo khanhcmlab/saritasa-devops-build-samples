@@ -27,3 +27,5 @@ spec:
       value: $(extensions.changed_modules)
     - name: timeout
       value: $(body.timeout)
+    - name: deployment-timeout
+      value: $(body.deployment-timeout)

@@ -46,26 +46,23 @@ spec:
     - name: timeout
       type: string
       description: The timeout for the component pipeline
+    - name: deployment-timeout
+      type: string
+      description: The timeout for the deployment rollout check
+
   steps:
-    - name: dispatch
+    - name: dispatch-request
       image: alpine/k8s:1.33.13
       args:
         - "$(params.changed-modules[*])"
+      volumeMounts:
+        - name: shared-data
+          mountPath: /shared
       script: |
         #!/bin/sh
         set -e
 
         PARAM_NAMESPACE="$(params.namespace)"
-        MAX_CONCURRENCY="$(params.max-concurrency)"
-        COMPONENT_CLEAN=$(echo "$(params.component)" | tr '/_' '--')
-
-        # Function to get count of active (running) component PipelineRuns
-        get_active_count() {
-          kubectl get pipelinerun -n ${PARAM_NAMESPACE} -o json 2>/dev/null | \
-            jq '[.items[] | select(.spec.pipelineRef.name == "component-pipeline") | select(.spec.status != "PipelineRunPending") | select(.status.conditions == null or ([.status.conditions[]? | select(.type == "Succeeded" and (.status == "True" or .status == "False"))] | length == 0))] | length' 2>/dev/null || echo "0"
-        }
-
-        # Find the index of the current component in the changed-modules list to stagger start
         CURRENT_MODULE="$(params.component)"
 
         INDEX=0
@@ -76,11 +73,12 @@ spec:
           INDEX=$((INDEX + 1))
         done
 
-        # 1. Stagger HTTP dispatch requests slightly to prevent API collisions
+        # Stagger HTTP dispatch requests slightly to prevent API collisions
         CURL_DELAY=$((INDEX * 1))
+        echo "Staggering HTTP dispatch by ${CURL_DELAY} seconds (index: ${INDEX})..."
         sleep ${CURL_DELAY}
 
-        # 2. Dispatch via EventListener (in Pending status by default)
+        COMPONENT_CLEAN=$(echo "$(params.component)" | tr '/_' '--')
         echo "Dispatching pending PipelineRun for component: $(params.component) (clean name: ${COMPONENT_CLEAN}) via EventListener..."
 
         RESPONSE=$(curl -s -X POST \
@@ -98,16 +96,36 @@ spec:
             "clone-depth": "$(params.clone-depth)",
             "delete-existing": "$(params.delete-existing)",
             "parent-pipelinerun": "$(params.parent-pipelinerun)",
-            "timeout": "$(params.timeout)"
+            "timeout": "$(params.timeout)",
+            "deployment-timeout": "$(params.deployment-timeout)"
           }' \
           "http://el-gh-event-listener.${PARAM_NAMESPACE}.svc.cluster.local:8080")
 
-        # 3. Extract the name of the newly created child PipelineRun
         EVENT_ID=$(echo "${RESPONSE}" | jq -r '.eventID' 2>/dev/null || true)
 
         if [ -z "${EVENT_ID}" ] || [ "${EVENT_ID}" = "null" ]; then
           echo "Error: Failed to obtain eventID from EventListener response."
           echo "Response was: ${RESPONSE}"
+          exit 1
+        fi
+
+        echo -n "${EVENT_ID}" > /shared/event_id
+        echo "Event ID ${EVENT_ID} written to shared volume."
+
+    - name: find-child-pipelinerun
+      image: alpine/k8s:1.33.13
+      volumeMounts:
+        - name: shared-data
+          mountPath: /shared
+      script: |
+        #!/bin/sh
+        set -e
+
+        PARAM_NAMESPACE="$(params.namespace)"
+        EVENT_ID=$(cat /shared/event_id)
+
+        if [ -z "${EVENT_ID}" ]; then
+          echo "Error: Event ID not found in /shared/event_id."
           exit 1
         fi
 
@@ -126,14 +144,44 @@ spec:
           exit 1
         fi
 
+        echo -n "${CHILD_RUN}" > /shared/child_run
         echo "Successfully dispatched child PipelineRun: ${CHILD_RUN} (currently Pending)"
 
-        # 4. Stagger concurrency check to prevent race conditions during starting
+    - name: wait-concurrency-limit
+      image: alpine/k8s:1.33.13
+      args:
+        - "$(params.changed-modules[*])"
+      volumeMounts:
+        - name: shared-data
+          mountPath: /shared
+      script: |
+        #!/bin/sh
+        set -e
+
+        PARAM_NAMESPACE="$(params.namespace)"
+        MAX_CONCURRENCY="$(params.max-concurrency)"
+        CURRENT_MODULE="$(params.component)"
+
+        INDEX=0
+        for mod in "$@"; do
+          if [ "${mod}" = "${CURRENT_MODULE}" ]; then
+            break
+          fi
+          INDEX=$((INDEX + 1))
+        done
+
+        # Stagger concurrency check to prevent race conditions during starting
         STAGGER_DELAY=$((INDEX * 10))
         echo "Staggering concurrency check by ${STAGGER_DELAY} seconds (index: ${INDEX})..."
         sleep ${STAGGER_DELAY}
 
-        # 5. Enforce concurrency limit before starting execution
+        # Function to get count of active (running) component PipelineRuns
+        get_active_count() {
+          kubectl get pipelinerun -n ${PARAM_NAMESPACE} -o json 2>/dev/null | \
+            jq '[.items[] | select(.spec.pipelineRef.name == "component-pipeline") | select(.spec.status != "PipelineRunPending") | select(.status.conditions == null or ([.status.conditions[]? | select(.type == "Succeeded" and (.status == "True" or .status == "False"))] | length == 0))] | length' 2>/dev/null || echo "0"
+        }
+
+        # Enforce concurrency limit before starting execution
         while true; do
           ACTIVE_COUNT=$(get_active_count)
           echo "Current active running component PipelineRuns: ${ACTIVE_COUNT} (max allowed: ${MAX_CONCURRENCY})"
@@ -144,11 +192,45 @@ spec:
           sleep 10
         done
 
-        # 6. Start the pending child PipelineRun
+    - name: start-pipelinerun
+      image: alpine/k8s:1.33.13
+      volumeMounts:
+        - name: shared-data
+          mountPath: /shared
+      script: |
+        #!/bin/sh
+        set -e
+
+        PARAM_NAMESPACE="$(params.namespace)"
+        CHILD_RUN=$(cat /shared/child_run)
+
+        if [ -z "${CHILD_RUN}" ]; then
+          echo "Error: Child PipelineRun name not found in /shared/child_run."
+          exit 1
+        fi
+
+        # Start the pending child PipelineRun
         echo "Starting pending child PipelineRun: ${CHILD_RUN}..."
         kubectl patch pipelinerun "${CHILD_RUN}" -n "${PARAM_NAMESPACE}" --type=merge -p '{"spec":{"status":null}}'
 
-        # 7. Wait for the child PipelineRun to complete
+    - name: monitor-pipelinerun
+      image: alpine/k8s:1.33.13
+      volumeMounts:
+        - name: shared-data
+          mountPath: /shared
+      script: |
+        #!/bin/sh
+        set -e
+
+        PARAM_NAMESPACE="$(params.namespace)"
+        CHILD_RUN=$(cat /shared/child_run)
+
+        if [ -z "${CHILD_RUN}" ]; then
+          echo "Error: Child PipelineRun name not found in /shared/child_run."
+          exit 1
+        fi
+
+        # Wait for the child PipelineRun to complete
         while true; do
           PIPELINERUN_JSON=$(kubectl get pipelinerun ${CHILD_RUN} -n ${PARAM_NAMESPACE} -o json 2>/dev/null || echo "{}")
           STATUS=$(echo "${PIPELINERUN_JSON}" | jq -r '.status.conditions[]? | select(.type == "Succeeded") | .status' 2>/dev/null || echo "null")
@@ -170,3 +252,7 @@ spec:
           echo "Child PipelineRun ${CHILD_RUN} is still running (status: ${STATUS}, reason: ${REASON}). Waiting 10 seconds..."
           sleep 10
         done
+
+  volumes:
+    - name: shared-data
+      emptyDir: {}

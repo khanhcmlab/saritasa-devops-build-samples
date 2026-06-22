@@ -34,6 +34,9 @@ spec:
     - name: delete-existing
       type: string
       description: Clean out the contents of the repo's destination directory if it already exists before cloning.
+    - name: deployment-timeout
+      type: string
+      description: The timeout for the deployment rollout check
   workspaces:
     - name: source-workspace
       description: Workspace where source code is cloned and built.
@@ -119,3 +122,5 @@ spec:
           value: "$(params.container-name)"
         - name: namespace
           value: "$(params.namespace)"
+        - name: deployment-timeout
+          value: "$(params.deployment-timeout)"

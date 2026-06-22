@@ -33,40 +33,47 @@ spec:
     - name: process-type
       description: "Default process type for the component (e.g. web or binary name)"
     - name: env-vars
-      type: array
       description: "Environment variables parsed from project.toml"
+
   steps:
-    - name: configure
+    - name: create-cache-dir
       image: dewwripper/alpine-yq:0.0.1
       script: |
         #!/bin/sh
         set -e
-
-        cd $(workspaces.source.path)
-
         CHANGED_COMPONENT="$(params.component)"
-        echo "Configuring component: ${CHANGED_COMPONENT}"
+        echo "Creating cache directory for component: ${CHANGED_COMPONENT}"
+        mkdir -p "$(workspaces.source.path)/cache/${CHANGED_COMPONENT}"
 
-        # Create cache directory for component
-        mkdir -p $(workspaces.source.path)/cache/${CHANGED_COMPONENT}
-
-        echo -n "${CHANGED_COMPONENT}" > $(results.source-subpath.path)
-
+    - name: prepare-metadata
+      image: dewwripper/alpine-yq:0.0.1
+      script: |
+        #!/bin/sh
+        set -e
+        CHANGED_COMPONENT="$(params.component)"
+        
         # Clean name for deployment
         clean_name=$(echo "${CHANGED_COMPONENT}" | tr '/_' '--')
-        echo -n "${clean_name}" > $(results.component-name.path)
+        echo -n "${clean_name}" > "$(results.component-name.path)"
 
         # Sanitize git-revision for image tag
         tag="$(params.git-revision)"
         clean_tag=$(echo "${tag}" | tr '/' '-')
-        echo -n "${clean_tag}" > $(results.image-tag.path)
+        echo -n "${clean_tag}" > "$(results.image-tag.path)"
+
+        # Target image name to build
         image="$(params.registry-path)/${clean_name}:${clean_tag}"
-        echo -n "${image}" > $(results.image.path)
+        echo -n "${image}" > "$(results.image.path)"
 
-        # Initialize default config values
-        buildpack=""
-        source_subpath="${CHANGED_COMPONENT}"
+        # Subpath within the workspace where the component is located
+        echo -n "${CHANGED_COMPONENT}" > "$(results.source-subpath.path)"
 
+    - name: select-builder
+      image: dewwripper/alpine-yq:0.0.1
+      script: |
+        #!/bin/sh
+        set -e
+        CHANGED_COMPONENT="$(params.component)"
         TECH_STACK="${CHANGED_COMPONENT%%/*}"
 
         # Select builder based on TECH_STACK concepts (Tiny, Base, Full)
@@ -89,37 +96,54 @@ spec:
             ;;
         esac
 
-        echo -n "${source_subpath}" > "$(results.source-subpath.path)"
-        path_to_app="$(workspaces.source.path)/${source_subpath}"
+        echo -n "${builder}" > "$(results.builder.path)"
+
+    - name: ensure-project-toml
+      image: dewwripper/alpine-yq:0.0.1
+      script: |
+        #!/bin/sh
+        set -e
+        CHANGED_COMPONENT="$(params.component)"
+        TECH_STACK="${CHANGED_COMPONENT%%/*}"
+        path_to_app="$(workspaces.source.path)/${CHANGED_COMPONENT}"
         target_toml="${path_to_app}/project.toml"
 
-        if [[ ! -f "${target_toml}" ]]; then
-          echo "project.toml is not exists. Creating..."
+        if [ ! -f "${target_toml}" ]; then
+          echo "project.toml does not exist. Creating..."
           mkdir -p "${path_to_app}"
           cat << EOF > "${target_toml}"
         [[build.buildpacks]]
         id = "paketo-buildpacks/${TECH_STACK}"
         EOF
-          echo "Create project.toml succesfully for ${TECH_STACK}"
+          echo "Created project.toml successfully for ${TECH_STACK}"
         else
-          echo "Found ${TECH_STACK} project.toml. Skip this step"
+          echo "Found ${TECH_STACK} project.toml. Skipping creation."
         fi
+
+    - name: parse-env-vars
+      image: dewwripper/alpine-yq:0.0.1
+      script: |
+        #!/bin/sh
+        set -e
+        CHANGED_COMPONENT="$(params.component)"
+        path_to_app="$(workspaces.source.path)/${CHANGED_COMPONENT}"
+        target_toml="${path_to_app}/project.toml"
 
         # Parsing ENV_VARS from project.toml
         ENV_VARS_JSON="[]"
-        if [[ -f "${target_toml}" ]]; then
+
+        if [ -f "${target_toml}" ]; then
           echo "Parsing Environment Variables from ${target_toml}..."
-          ENV_VARS_JSON=$(yq eval '[.build.env[] | .name + "=" + .value]' "${target_toml}" -o=json 2>/dev/null)
-          [[ "${ENV_VARS_JSON}" == "null" || -z "${ENV_VARS_JSON}" ]] && ENV_VARS_JSON="[]"
+          ENV_VARS_JSON=$(yq eval '(.build.env[] | .name + "=" + .value) // []' "${target_toml}" -o=json 2>/dev/null)
         fi
 
         echo "ENV_VARS_JSON=${ENV_VARS_JSON}"
+        echo -n "${ENV_VARS_JSON}" > "$(results.env-vars.path)"
 
-        # Output remaining results
-        echo -n "${builder}" > $(results.builder.path)
-
-        # Output process-type result
-        echo -n "${PROCESS_TYPE}" > $(results.process-type.path)
-
-        # Output env-vars result
-        echo -n "${ENV_VARS_JSON}" > $(results.env-vars.path)
+    - name: output-process-type
+      image: dewwripper/alpine-yq:0.0.1
+      script: |
+        #!/bin/sh
+        set -e
+        # Output process-type result (PROCESS_TYPE environment variable is empty/unset)
+        echo -n "${PROCESS_TYPE}" > "$(results.process-type.path)"
