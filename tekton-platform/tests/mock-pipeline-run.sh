@@ -32,7 +32,7 @@ cat <<EOF | kubectl apply -f -
       - name: git-repository-url
         value: "https://github.com/khanhcmlab/saritasa-devops-build-samples" 
       - name: action
-        value: "build"
+        value: "deploy"
       - name: registry-path
         value: "ghcr.io/dewwripper"
       - name: max-concurrency
@@ -50,5 +50,5 @@ cat <<EOF | kubectl apply -f -
       - name: deployment-timeout
         value: "30s"
       - name: changed-modules
-        value: '["web-servers/nginx-sample", "web-servers/httpd-sample", "nodejs/react-yarn"]'
+        value: '["python/pipenv", "dotnet-core/fde-app", "nodejs/react-yarn", "java/dist-zip"]'
 EOF

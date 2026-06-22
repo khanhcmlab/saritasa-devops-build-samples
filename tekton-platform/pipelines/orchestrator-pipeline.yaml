@@ -42,31 +42,11 @@ spec:
       description: The timeout for the deployment rollout check
   tasks:
     - name: parse-changed-modules
+      taskRef:
+        name: parse-changed-modules
       params:
         - name: changed-modules
           value: "$(params.changed-modules)"
-      taskSpec:
-        params:
-          - name: changed-modules
-            type: string
-        results:
-          - name: changed-modules
-            type: array
-        steps:
-          - name: parse
-            image: alpine/k8s:1.33.13
-            env:
-              - name: CHANGED_MODULES
-                value: "$(params.changed-modules)"
-            script: |
-              #!/bin/sh
-              CLEANED=$(echo -n "${CHANGED_MODULES}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-              echo -n "${CLEANED}" | jq -Rs '
-                if . == "" or . == "[]" or . == "[\"\"]" then []
-                elif startswith("[") then fromjson
-                else gsub(","; " ") | split(" ") | map(select(. != ""))
-                end
-              ' -c > "$(results.changed-modules.path)"
     - name: dispatch-pipelineruns
       runAfter:
         - parse-changed-modules
