@@ -2,80 +2,236 @@ apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
   name: dispatch-pipelinerun
-  namespace: saritasa-test
 spec:
+  description: >-
+    Dispatches a child PipelineRun for a component via the EventListener, waits
+    for a concurrency slot, starts it, and monitors it until completion.
+
+    Flow: dispatch-request -> find-child -> wait-concurrency -> start -> monitor
+
   params:
-    - name: COMPONENT
+    - name: component
       type: string
-    - name: gitrevision
+      description: The name of the component to build and deploy.
+    - name: git-revision
       type: string
-    - name: gitrepositoryurl
+      description: The git revision/sha to build.
+    - name: git-repository-url
       type: string
+      description: The git repository URL.
     - name: registry-path
       type: string
+      description: The target docker registry path.
     - name: action
       type: string
+      description: The action to perform (build or deploy).
+    - name: max-concurrency
+      type: string
+      description: Maximum number of concurrent PipelineRuns allowed.
+    - name: namespace
+      type: string
+      description: The namespace for all PipelineRun operations.
+    - name: container-name
+      type: string
+      description: The container name in the Deployment to patch.
+    - name: clone-depth
+      type: string
+      description: The depth of the git clone.
+    - name: delete-existing
+      type: string
+      description: Whether to clean the repo destination before cloning.
+    - name: parent-pipelinerun
+      type: string
+      description: The name of the parent orchestrator PipelineRun.
+    - name: changed-modules
+      type: array
+      description: The ordered list of changed modules (used for stagger index).
+    - name: timeout
+      type: string
+      description: The timeout for the component pipeline.
+    - name: deployment-timeout
+      type: string
+      description: The timeout for the deployment rollout check.
+
   steps:
-    - name: dispatch
-      image: alpine/k8s:1.20.4
+    - name: dispatch-request
+      image: alpine/k8s:1.33.13
+      args:
+        - "$(params.changed-modules[*])"
+      volumeMounts:
+        - name: shared-data
+          mountPath: /shared
       script: |
         #!/bin/sh
         set -e
 
-        PARAM_COMPONENT="$(params.COMPONENT)"
-        PARAM_GITREVISION="$(params.gitrevision)"
-        PARAM_GITURL="$(params.gitrepositoryurl)"
-        PARAM_REGISTRY="$(params.registry-path)"
-        PARAM_ACTION="$(params.action)"
+        PARAM_NAMESPACE="$(params.namespace)"
 
-        COMPONENT_CLEAN=$(echo "$PARAM_COMPONENT" | tr '/_' '--')
+        COMPONENT_CLEAN=$(echo "$(params.component)" | tr '/_' '--')
+        echo "Dispatching pending PipelineRun for component: $(params.component) (clean name: ${COMPONENT_CLEAN}) via EventListener..."
 
-        echo "Dispatching PipelineRun for component: ${PARAM_COMPONENT} (clean name: ${COMPONENT_CLEAN})"
+        RESPONSE=$(curl -s -X POST \
+          -H "Content-Type: application/json" \
+          -H "X-Event-Type: component-dispatch" \
+          -d '{
+            "component": "$(params.component)",
+            "git-revision": "$(params.git-revision)",
+            "git-repository-url": "$(params.git-repository-url)",
+            "registry-path": "$(params.registry-path)",
+            "action": "$(params.action)",
+            "max-concurrency": "$(params.max-concurrency)",
+            "namespace": "$(params.namespace)",
+            "container-name": "$(params.container-name)",
+            "clone-depth": "$(params.clone-depth)",
+            "delete-existing": "$(params.delete-existing)",
+            "parent-pipelinerun": "$(params.parent-pipelinerun)",
+            "timeout": "$(params.timeout)",
+            "deployment-timeout": "$(params.deployment-timeout)"
+          }' \
+          "http://el-gh-event-listener.${PARAM_NAMESPACE}.svc.cluster.local:8080")
 
-        echo "Creating PVCs ${SOURCE_PVC_NAME} and ${CACHE_PVC_NAME} and PipelineRun..."
+        EVENT_ID=$(echo "${RESPONSE}" | jq -r '.eventID' 2>/dev/null || true)
 
+        if [ -z "${EVENT_ID}" ] || [ "${EVENT_ID}" = "null" ]; then
+          echo "Error: Failed to obtain eventID from EventListener response."
+          echo "Response was: ${RESPONSE}"
+          exit 1
+        fi
 
-        cat <<EOF | kubectl create -f -
-        apiVersion: tekton.dev/v1beta1
-        kind: PipelineRun
-        metadata:
-          generateName: ${COMPONENT_CLEAN}-pipelinerun-
-          namespace: saritasa-test
-        spec:
-          serviceAccountName: pipeline-service-account
-          pipelineRef:
-            name: component-pipeline
-          podTemplate:
-            nodeSelector:
-              node: hp
-          workspaces:
-            - name: source-workspace
-              volumeClaimTemplate:
-                spec:
-                  storageClassName: local-path
-                  accessModes:
-                    - ReadWriteOnce
-                  resources:
-                    requests:
-                      storage: 1Gi
-            - name: cache
-              volumeClaimTemplate:
-                spec:
-                  storageClassName: local-path
-                  accessModes:
-                    - ReadWriteOnce
-                  resources:
-                    requests:
-                      storage: 1Gi
-          params:
-            - name: component
-              value: "${PARAM_COMPONENT}"
-            - name: gitrevision
-              value: "${PARAM_GITREVISION}"
-            - name: gitrepositoryurl
-              value: "${PARAM_GITURL}"
-            - name: registry-path
-              value: "${PARAM_REGISTRY}"
-            - name: action
-              value: "${PARAM_ACTION}"
-        EOF
+        echo -n "${EVENT_ID}" > /shared/event_id
+        echo "Event ID ${EVENT_ID} written to shared volume."
+
+    - name: find-child-pipelinerun
+      image: alpine/k8s:1.33.13
+      volumeMounts:
+        - name: shared-data
+          mountPath: /shared
+      script: |
+        #!/bin/sh
+        set -e
+
+        PARAM_NAMESPACE="$(params.namespace)"
+        EVENT_ID=$(cat /shared/event_id)
+
+        if [ -z "${EVENT_ID}" ]; then
+          echo "Error: Event ID not found in /shared/event_id."
+          exit 1
+        fi
+
+        echo "Waiting for child PipelineRun with eventID ${EVENT_ID} to be created..."
+        CHILD_RUN=""
+        for i in $(seq 1 30); do
+          CHILD_RUN=$(kubectl get pipelinerun -n ${PARAM_NAMESPACE} -l triggers.tekton.dev/triggers-eventid=${EVENT_ID} -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+          if [ -n "${CHILD_RUN}" ] && [ "${CHILD_RUN}" != "null" ]; then
+            break
+          fi
+          sleep 1
+        done
+
+        if [ -z "${CHILD_RUN}" ] || [ "${CHILD_RUN}" = "null" ]; then
+          echo "Error: Failed to find child PipelineRun with eventID: ${EVENT_ID} after 30 seconds."
+          exit 1
+        fi
+
+        echo -n "${CHILD_RUN}" > /shared/child_run
+        echo "Successfully dispatched child PipelineRun: ${CHILD_RUN} (currently Pending)"
+
+    - name: wait-concurrency-limit
+      image: alpine/k8s:1.33.13
+      args:
+        - "$(params.changed-modules[*])"
+      volumeMounts:
+        - name: shared-data
+          mountPath: /shared
+      script: |
+        #!/bin/sh
+        set -e
+
+        PARAM_NAMESPACE="$(params.namespace)"
+        MAX_CONCURRENCY="$(params.max-concurrency)"
+
+        # Function to get count of active (running) component PipelineRuns
+        get_active_count() {
+          kubectl get pipelinerun -n ${PARAM_NAMESPACE} -o json 2>/dev/null | \
+            jq '[.items[] | select(.spec.pipelineRef.name == "component-pipeline") | \
+            select(.spec.status != "PipelineRunPending") | \
+            select(.status.conditions == null or ([.status.conditions[]? | \
+            select(.type == "Succeeded" and (.status == "True" or .status == "False"))] | \
+            length == 0))] | length' 2>/dev/null || echo "0"
+        }
+
+        # Enforce concurrency limit before starting execution
+        while true; do
+          ACTIVE_COUNT=$(get_active_count)
+          echo "Current active running component PipelineRuns: ${ACTIVE_COUNT} (max allowed: ${MAX_CONCURRENCY})"
+          if [ "${ACTIVE_COUNT}" -lt "${MAX_CONCURRENCY}" ]; then
+            break
+          fi
+          echo "Concurrency limit reached. Waiting 10 seconds..."
+          sleep 10
+        done
+
+    - name: start-pipelinerun
+      image: alpine/k8s:1.33.13
+      volumeMounts:
+        - name: shared-data
+          mountPath: /shared
+      script: |
+        #!/bin/sh
+        set -e
+
+        PARAM_NAMESPACE="$(params.namespace)"
+        CHILD_RUN=$(cat /shared/child_run)
+
+        if [ -z "${CHILD_RUN}" ]; then
+          echo "Error: Child PipelineRun name not found in /shared/child_run."
+          exit 1
+        fi
+
+        # Start the pending child PipelineRun
+        echo "Starting pending child PipelineRun: ${CHILD_RUN}..."
+        kubectl patch pipelinerun "${CHILD_RUN}" -n "${PARAM_NAMESPACE}" --type=merge -p '{"spec":{"status":null}}'
+
+    - name: monitor-pipelinerun
+      image: alpine/k8s:1.33.13
+      volumeMounts:
+        - name: shared-data
+          mountPath: /shared
+      script: |
+        #!/bin/sh
+        set -e
+
+        PARAM_NAMESPACE="$(params.namespace)"
+        CHILD_RUN=$(cat /shared/child_run)
+
+        if [ -z "${CHILD_RUN}" ]; then
+          echo "Error: Child PipelineRun name not found in /shared/child_run."
+          exit 1
+        fi
+
+        # Wait for the child PipelineRun to complete
+        while true; do
+          PIPELINERUN_JSON=$(kubectl get pipelinerun ${CHILD_RUN} -n ${PARAM_NAMESPACE} -o json 2>/dev/null || echo "{}")
+          STATUS=$(echo "${PIPELINERUN_JSON}" | jq -r '.status.conditions[]? | select(.type == "Succeeded") | .status' 2>/dev/null || echo "null")
+          REASON=$(echo "${PIPELINERUN_JSON}" | jq -r '.status.conditions[]? | select(.type == "Succeeded") | .reason' 2>/dev/null || echo "null")
+
+          # Handle the case where status is not yet populated
+          if [ -z "${STATUS}" ] || [ "${STATUS}" = "null" ]; then
+            STATUS="Unknown"
+          fi
+
+          if [ "${STATUS}" = "True" ]; then
+            echo "Child PipelineRun ${CHILD_RUN} completed successfully!"
+            break
+          elif [ "${STATUS}" = "False" ]; then
+            echo "Child PipelineRun ${CHILD_RUN} failed with reason: ${REASON}."
+            exit 1
+          fi
+
+          echo "Child PipelineRun ${CHILD_RUN} is still running (status: ${STATUS}, reason: ${REASON}). Waiting 10 seconds..."
+          sleep 10
+        done
+
+  volumes:
+    - name: shared-data
+      emptyDir: {}

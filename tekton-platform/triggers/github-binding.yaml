@@ -3,12 +3,29 @@ apiVersion: triggers.tekton.dev/v1alpha1
 kind: TriggerBinding
 metadata:
   name: github-merge-binding
-  namespace: saritasa-test
 spec:
   params:
-    - name: gitrevision
+    - name: git-revision
       value: $(body.after)
-    - name: gitrepositoryurl
+    - name: git-repository-url
       value: $(body.repository.clone_url)
     - name: action
       value: "deploy"
+    - name: registry-path
+      value: "ghcr.io/dewwripper"
+    - name: max-concurrency
+      value: "2"
+    - name: namespace
+      value: "saritasa-test"
+    - name: container-name
+      value: "app"
+    - name: clone-depth
+      value: "2"
+    - name: delete-existing
+      value: "true"
+    - name: changed-modules
+      value: $(extensions.changed_modules)
+    - name: timeout
+      value: "5m"
+    - name: deployment-timeout
+      value: "30s"

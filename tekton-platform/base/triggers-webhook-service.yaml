@@ -3,9 +3,6 @@ kind: Service
 metadata:
   name: gh-listener-webhook
   namespace: default
-  labels:
-    app.kubernetes.io/name: gh-listener-webhook
-    app.kubernetes.io/component: externalname-service
 spec:
   type: ExternalName
   externalName: el-gh-event-listener.saritasa-test.svc.cluster.local

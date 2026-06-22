@@ -2,80 +2,87 @@ apiVersion: tekton.dev/v1beta1
 kind: Pipeline
 metadata:
   name: orchestrator-pipeline
-  namespace: saritasa-test
 spec:
   params:
-    - name: gitrevision
+    - name: git-revision
       type: string
       description: The git revision/sha to build.
-    - name: gitrepositoryurl
+    - name: git-repository-url
       type: string
       description: The git repository URL.
     - name: action
       type: string
       description: The action to perform (build or deploy).
-      default: "build"
     - name: registry-path
       type: string
       description: The target docker registry path.
-      default: "ghcr.io/dewwripper"
-  workspaces:
-    - name: source-workspace
-      description: Shared workspace for cloning, change detection, and building.
+    - name: max-concurrency
+      type: string
+      description: Maximum number of concurrent PipelineRuns allowed in the namespace.
+    - name: namespace
+      type: string
+      description: The namespace to check active PipelineRuns in.
+    - name: container-name
+      type: string
+      description: The container name in the Deployment to patch.
+    - name: clone-depth
+      type: string
+      description: The depth of the git clone.
+    - name: delete-existing
+      type: string
+      description: Clean out the contents of the repo's destination directory if it already exists before cloning.
+    - name: changed-modules
+      type: string
+      description: The list of changed modules to build.
+    - name: timeout
+      type: string
+      description: The timeout for the component pipelines
+    - name: deployment-timeout
+      type: string
+      description: The timeout for the deployment rollout check
   tasks:
-    - name: check-concurrency
+    - name: parse-changed-modules
       taskRef:
-        name: check-concurrency
+        name: parse-changed-modules
       params:
-        - name: pipelinerun-name
-          value: $(context.pipelineRun.name)
-    - name: git-clone
-      runAfter:
-        - check-concurrency
-      taskRef:
-        name: git-clone
-      workspaces:
-        - name: output
-          workspace: source-workspace
-      params:
-        - name: url
-          value: "$(params.gitrepositoryurl)"
-        - name: revision
-          value: "$(params.gitrevision)"
-        - name: depth
-          value: "2"
-    - name: detect-changes
-      runAfter:
-        - git-clone
-      workspaces:
-        - name: source
-          workspace: source-workspace
-      taskRef:
-        name: detect-changes
-      params:
-        - name: gitrevision
-          value: "$(tasks.git-clone.results.commit)"
-        - name: registry-path
-          value: "$(params.registry-path)"
+        - name: changed-modules
+          value: "$(params.changed-modules)"
     - name: dispatch-pipelineruns
       runAfter:
-        - detect-changes
-      when:
-        - input: "$(tasks.detect-changes.results.should-build)"
-          operator: in
-          values: ["true"]
+        - parse-changed-modules
       matrix:
         params:
-          - name: COMPONENT
-            value: $(tasks.detect-changes.results.changed-modules-json[*])
+          - name: component
+            value: $(tasks.parse-changed-modules.results.changed-modules[*])
       taskRef:
         name: dispatch-pipelinerun
       params:
-        - name: gitrevision
-          value: "$(tasks.git-clone.results.commit)"
-        - name: gitrepositoryurl
-          value: "$(params.gitrepositoryurl)"
+        - name: git-revision
+          value: "$(params.git-revision)"
+        - name: git-repository-url
+          value: "$(params.git-repository-url)"
         - name: registry-path
           value: "$(params.registry-path)"
         - name: action
           value: "$(params.action)"
+        - name: max-concurrency
+          value: "$(params.max-concurrency)"
+        - name: namespace
+          value: "$(params.namespace)"
+        - name: container-name
+          value: "$(params.container-name)"
+        - name: clone-depth
+          value: "$(params.clone-depth)"
+        - name: delete-existing
+          value: "$(params.delete-existing)"
+        - name: parent-pipelinerun
+          value: "$(context.pipelineRun.name)"
+        - name: changed-modules
+          value:
+            - "$(tasks.parse-changed-modules.results.changed-modules[*])"
+        - name: timeout
+          value: "$(params.timeout)"
+        - name: deployment-timeout
+          value: "$(params.deployment-timeout)"
+
+
