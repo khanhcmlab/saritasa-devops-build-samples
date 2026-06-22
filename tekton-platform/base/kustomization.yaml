@@ -7,4 +7,4 @@ resources:
   - sealed-gh-webhook-secret.yaml
   - sealed-ghcr-secret.yaml
   - shared-cache-pvc.yaml
-  - triggers-webhook-service.yaml
+  # - triggers-webhook-service.yaml

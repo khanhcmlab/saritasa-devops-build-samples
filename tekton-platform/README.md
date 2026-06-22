@@ -6,20 +6,118 @@ This directory contains the Tekton CI/CD pipeline configuration designed to auto
 
 *   **`base/`**: Holds RBAC permissions, service accounts, sealed secrets (GitHub authentication, GitHub webhook, and GHCR registry credentials), and triggers webhook service manifests.
 *   **`pipelines/`**: Defines the CI/CD pipelines:
-    *   `orchestrator-pipeline.yaml`: Entrypoint orchestrator pipeline that runs concurrency checks, clones the repository, detects component changes, and dynamically dispatches individual component builds in parallel.
-    *   `component-pipeline.yaml`: Builder pipeline that runs for each changed component to configure build variables, run Cloud Native Buildpacks building phases, and optionally deploy the application.
+    *   `orchestrator-pipeline.yaml`: Entrypoint orchestrator pipeline that runs matrix dispatching for all changed component modules in parallel.
+    *   `component-pipeline.yaml`: Builder pipeline that runs for each changed component to clone the repository, configure build variables, build using Cloud Native Buildpacks, and deploy the application.
 *   **`tasks/`**: Declares individual Tekton tasks containing their inline script logic:
-    *   `check-concurrency.yaml`: Prevents multiple concurrent runs by queueing pipeline runs in order of their creation timestamp.
-    *   `detect-changes.yaml`: Scans the cloned workspace using `git diff` to identify which components changed and outputs a JSON list of those components.
     *   `configure-component.yaml`: Dynamically configures building variables (builder image, target image name, environment variables, default process type, etc.) for a specific component and ensures a `project.toml` configuration is present.
-    *   `dispatch-pipelinerun.yaml`: Dynamically triggers a child `component-pipeline` PipelineRun with dedicated workspace/cache PVC configurations for a specific component.
-    *   `patch-deployment.yaml`: Patches the target Kubernetes deployment container with the newly built image tag and monitors the rollout to completion.
+    *   `dispatch-pipelinerun.yaml`: Dynamically triggers a child `component-pipeline` PipelineRun with dedicated workspace/cache PVC configurations, managing stagger delays and concurrency checks.
+    *   `patch-deployment.yaml`: Patches the target Kubernetes deployment container with the newly built image tag, creating the deployment if it does not exist, and monitors the rollout to completion.
 *   **`templates/`**: Contains language/framework-specific default configuration templates (e.g., `default.toml` files for Node.js, Go, Python, Java, etc.) that can be referenced for component builds.
 *   **`triggers/`**: Configures EventListeners (`event-listener.yaml`), TriggerBindings (`github-binding.yaml`), and TriggerTemplates (`trigger-template.yaml`) to trigger builds automatically via Git webhooks.
 *   **`scripts/`**: Contains helper utility scripts for workspace management:
     *   `stop-all-running-pipelinerun.sh`: Helper script to cancel/stop all running pipeline runs in the namespace.
-*   **`tests/`**: Includes helper shell scripts to test and run mock pipelineruns:
-    *   `mock-pipeline-run.sh`: Triggers a mock orchestrator pipeline run manually.
+
+
+---
+
+#### Pipeline Execution Flow
+
+The platform's execution is divided into two separate stages: the main **Orchestrator Pipeline** and the subsequent **Component Pipelines** triggered for each changed component.
+
+### 1. Orchestrator Pipeline Flow
+This stage is triggered on any Git `push` event. It clones the repository, detects which components changed, and triggers a downstream build for each changed module.
+
+```mermaid
+flowchart TD
+    %% Input / Events
+    GitHub[GitHub Push Event] -->|HTTP POST JSON Payload| Webhook[Cloudflare Tunnel / ExternalName SVC]
+    Webhook -->|JSON Payload| EL[EventListener: gh-event-listener]
+    
+    %% Webhook Triggers Processing
+    EL -->|1. Overlays: changed_modules via CEL interceptor| EL
+    EL -->|2. Maps to parameters| Bind1[TriggerBinding: github-merge-binding]
+    Bind1 -->|3. Resolves to Template| Temp1[TriggerTemplate: trigger-template]
+    Temp1 -->|4. Spawns with changed-modules param| PR1[PipelineRun: orchestrator-pipelinerun]
+
+    %% Orchestrator Pipeline
+    subgraph Orchestrator Pipeline [Orchestrator Pipeline Flow]
+        PR1 -->|Starts| Pipe1[Pipeline: orchestrator-pipeline]
+        Pipe1 -->|Matrix over changed-modules| Task_Dispatch[Task: dispatch-pipelinerun]
+        
+        %% Concurrency / Matrix Dispatching
+        subgraph Matrix Dispatch Loop [Matrix Dispatch per Changed Component]
+            Task_Dispatch -->|Step 1: Stagger delay & HTTP POST| DispReq[dispatch-request Step]
+            DispReq -->|Triggers component event| EL_Child[EventListener: gh-event-listener]
+            DispReq -->|Writes eventID to shared volume| FindChild[find-child-pipelinerun Step]
+            FindChild -->|Finds child PipelineRun name| WaitLimit[wait-concurrency-limit Step]
+            WaitLimit -->|Checks active component runs against max-concurrency| StartChild[start-pipelinerun Step]
+            StartChild -->|Patches status = null| TriggerPR([Trigger Component PipelineRun])
+            StartChild -->|Starts child run| MonitorChild[monitor-pipelinerun Step]
+            MonitorChild -->|Polls status until finished| MonitorEnd([End component build])
+        end
+    end
+
+    %% Flow Styling
+    classDef pipeline fill:#1A365D,stroke:#3182CE,stroke-width:2px,color:#fff;
+    classDef task fill:#2D3748,stroke:#4A5568,stroke-width:1px,color:#fff;
+    classDef trigger fill:#2C5282,stroke:#2B6CB0,stroke-width:1.5px,color:#fff;
+    classDef input fill:#22543D,stroke:#2F855A,stroke-width:2px,color:#fff;
+
+    class PR1,Pipe1 pipeline;
+    class Task_Dispatch task;
+    class EL,Bind1,Temp1 trigger;
+    class GitHub,Webhook input;
+```
+
+### 2. Component Pipeline Flow
+This stage runs for each individual changed component. It configures component-specific build variables, packages the app with Paketo buildpacks, and deploys it to the cluster (updating images and validating rollouts matching the `deployment-timeout` configuration).
+
+```mermaid
+flowchart TD
+    %% Input Event from dispatch-pipelinerun
+    DispReq[Orchestrator dispatch-request Step] -->|HTTP POST| EL_Child[EventListener: gh-event-listener]
+    
+    %% Webhook Triggers Processing
+    EL_Child -->|Intercepts component-dispatch event| Bind2[TriggerBinding: component-dispatch-binding]
+    Bind2 -->|Parameters: component, timeout, deployment-timeout| Temp2[TriggerTemplate: component-dispatch-template]
+    Temp2 -->|Spawns in PENDING status| PR2[PipelineRun: component-pipeline-run]
+
+    %% Component Pipeline (Child Run)
+    subgraph Component Pipeline [Component Pipeline Flow]
+        PR2 -->|Starts| Pipe2[Pipeline: component-pipeline]
+        Pipe2 -->|Step 1| Task_Clone2[Task: git-clone]
+        Task_Clone2 -->|Step 2| Task_Config[Task: configure-component]
+        
+        subgraph Configure Steps [configure-component Task Steps]
+            Task_Config --> Config_Cache[create-cache-dir]
+            Config_Cache --> Config_Metadata[prepare-metadata]
+            Config_Metadata --> Config_Builder[select-builder]
+            Config_Builder --> Config_Toml[ensure-project-toml]
+            Config_Toml --> Config_Env[parse-env-vars]
+            Config_Env --> Config_Proc[output-process-type]
+        end
+        
+        Task_Config -->|Configures environment/builder| Task_BP[Task: buildpacks]
+        Task_BP -->|Builds application image using Paketo| Task_Deploy[Task: patch-deployment]
+        
+        subgraph Deployment Rollout [patch-deployment Task Steps]
+            Task_Deploy --> Deploy_Create[create-deployment step]
+            Deploy_Create -->|Checks & Creates Deployment if missing| Deploy_Patch[patch-deployment step]
+            Deploy_Patch -->|kubectl set image & monitors rollout with deployment-timeout| DeployEnd([Completed Rollout])
+        end
+    end
+
+    %% Flow Styling
+    classDef pipeline fill:#1A365D,stroke:#3182CE,stroke-width:2px,color:#fff;
+    classDef task fill:#2D3748,stroke:#4A5568,stroke-width:1px,color:#fff;
+    classDef trigger fill:#2C5282,stroke:#2B6CB0,stroke-width:1.5px,color:#fff;
+    classDef input fill:#22543D,stroke:#2F855A,stroke-width:2px,color:#fff;
+
+    class PR2,Pipe2 pipeline;
+    class Task_Clone2,Task_Config,Task_BP,Task_Deploy task;
+    class EL_Child,Bind2,Temp2 trigger;
+    class DispReq input;
+```
 
 ---
 
@@ -84,7 +182,7 @@ To trigger pipeline builds automatically when code is pushed to GitHub, you need
    * **Payload URL**: Enter your exposed public URL (e.g., `https://<your-cloudflare-tunnel-domain>`).
    * **Content type**: Select `application/json`.
    * **Secret**: Enter the webhook secret token matching the value configured in your Kubernetes `github-webhook-secret` (defined under the `token` key).
-   * **Which events**: Select **Just the push event** (the EventListener is configured to intercept `push` events).
+   * **Which events**: Select **Just the push event** (the EventListener is configured to trigger on any Git `push` event, rather than pull requests).
    * Click **Add webhook** to register it.
 
 ---
@@ -97,19 +195,6 @@ Deploy all platform resources (RBAC, Secrets, Tasks, Pipelines, and Triggers) in
 kubectl apply -k tekton-platform/
 ```
 
----
-
-## Running and Testing Mock Pipelines
-
-You can trigger a mock pipeline run manually with:
-
-```bash
-bash tekton-platform/tests/mock-pipeline-run.sh
-```
-
-To test concurrency queuing and parallel processing, you can run the mock script multiple times in quick succession.
-
----
 
 ## Adding/Modifying Component Builds
 

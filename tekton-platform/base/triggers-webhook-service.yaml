@@ -2,9 +2,10 @@ apiVersion: v1
 kind: Service
 metadata:
   name: gh-listener-webhook
+  namespace: default
 spec:
   type: ExternalName
-  externalName: el-gh-event-listener
+  externalName: el-gh-event-listener.saritasa-test.svc.cluster.local
   ports:
     - name: http
       port: 8080
