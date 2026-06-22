@@ -10,7 +10,6 @@ spec:
       description: The git repository URL
     - name: action
       description: The action to perform (build or deploy)
-      default: "build"
     - name: registry-path
       description: The target docker registry path
     - name: max-concurrency
@@ -27,7 +26,6 @@ spec:
       description: The list of changed modules to build.
     - name: timeout
       description: The timeout for the component pipelines
-      default: "5m"
   resourcetemplates:
     - apiVersion: tekton.dev/v1beta1
       kind: PipelineRun

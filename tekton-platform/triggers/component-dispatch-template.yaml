@@ -31,7 +31,6 @@ spec:
       description: The name of the parent orchestrator PipelineRun.
     - name: timeout
       description: The timeout for the child PipelineRun.
-      default: "5m"
   resourcetemplates:
     - apiVersion: tekton.dev/v1beta1
       kind: PipelineRun

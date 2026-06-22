@@ -26,4 +26,4 @@ spec:
     - name: changed-modules
       value: $(extensions.changed_modules)
     - name: timeout
-      value: "5m"
+      value: $(body.timeout)

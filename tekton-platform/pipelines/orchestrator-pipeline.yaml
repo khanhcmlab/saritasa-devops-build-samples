@@ -37,7 +37,6 @@ spec:
     - name: timeout
       type: string
       description: The timeout for the component pipelines
-      default: "5m"
   tasks:
     - name: dispatch-pipelineruns
       matrix:

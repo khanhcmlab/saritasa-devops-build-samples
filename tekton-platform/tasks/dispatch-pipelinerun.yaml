@@ -46,7 +46,6 @@ spec:
     - name: timeout
       type: string
       description: The timeout for the component pipeline
-      default: "5m"
   steps:
     - name: dispatch
       image: alpine/k8s:1.33.13
