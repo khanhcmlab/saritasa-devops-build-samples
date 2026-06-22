@@ -1,17 +1,22 @@
 apiVersion: triggers.tekton.dev/v1alpha1
 kind: TriggerTemplate
 metadata:
-  name: trigger-template
+  name: component-dispatch-template
+  namespace: saritasa-test
 spec:
   params:
+    - name: component
+      description: The name of the component to build and deploy.
+    - name: component-clean
+      description: Clean name for Kubernetes resources.
     - name: git-revision
-      description: The git revision/sha to build
+      description: The git revision/sha to build.
     - name: git-repository-url
-      description: The git repository URL
-    - name: action
-      description: The action to perform (build or deploy)
+      description: The git repository URL.
     - name: registry-path
-      description: The target docker registry path
+      description: The target docker registry path.
+    - name: action
+      description: The action to perform (build or deploy).
     - name: max-concurrency
       description: Maximum number of concurrent PipelineRuns allowed in the namespace.
     - name: namespace
@@ -22,33 +27,54 @@ spec:
       description: The depth of the git clone.
     - name: delete-existing
       description: Clean out the contents of the repo's destination directory if it already exists before cloning.
-    - name: changed-modules
-      description: The list of changed modules to build.
+    - name: parent-pipelinerun
+      description: The name of the parent orchestrator PipelineRun.
     - name: timeout
-      description: The timeout for the component pipelines
+      description: The timeout for the child PipelineRun.
     - name: deployment-timeout
       description: The timeout for the deployment rollout check
   resourcetemplates:
     - apiVersion: tekton.dev/v1beta1
       kind: PipelineRun
       metadata:
-        generateName: orchestrator-pipelinerun-
+        generateName: $(tt.params.component-clean)-pipelinerun-
+        namespace: $(tt.params.namespace)
+        labels:
+          orchestrator-pipelinerun: $(tt.params.parent-pipelinerun)
       spec:
+        status: PipelineRunPending
+        timeouts:
+          pipeline: $(tt.params.timeout)
         serviceAccountName: pipeline-service-account
         pipelineRef:
-          name: orchestrator-pipeline
+          name: component-pipeline
         podTemplate:
           nodeSelector:
             node: hp
+        workspaces:
+          - name: source-workspace
+            volumeClaimTemplate:
+              spec:
+                storageClassName: local-path
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 1Gi
+          - name: cache
+            persistentVolumeClaim:
+              claimName: shared-cache-pvc
         params:
+          - name: component
+            value: $(tt.params.component)
           - name: git-revision
             value: $(tt.params.git-revision)
           - name: git-repository-url
             value: $(tt.params.git-repository-url)
-          - name: action
-            value: $(tt.params.action)
           - name: registry-path
             value: $(tt.params.registry-path)
+          - name: action
+            value: $(tt.params.action)
           - name: max-concurrency
             value: $(tt.params.max-concurrency)
           - name: namespace
@@ -59,11 +85,5 @@ spec:
             value: $(tt.params.clone-depth)
           - name: delete-existing
             value: $(tt.params.delete-existing)
-          - name: changed-modules
-            value: $(tt.params.changed-modules)
-          - name: timeout
-            value: $(tt.params.timeout)
           - name: deployment-timeout
             value: $(tt.params.deployment-timeout)
-
-

@@ -2,7 +2,6 @@ apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
   name: patch-deployment
-  namespace: saritasa-test
 spec:
   description: >-
     Patches a Kubernetes Deployment with a new image tag (typically the commit SHA)
@@ -11,47 +10,80 @@ spec:
     - name: source
       description: Workspace containing the application source code and scripts.
   params:
-    - name: DEPLOYMENT_NAME
+    - name: deployment-name
       type: string
       description: The name of the Deployment to patch.
-    - name: CONTAINER_NAME
+    - name: container-name
       type: string
       description: The container name in the Deployment to patch.
-      default: "app"
-    - name: IMAGE_NAME
+    - name: image-name
       type: string
       description: The base image name (without tag).
-    - name: TAG
+    - name: tag
       type: string
       description: The new image tag (e.g., commit SHA) to apply.
-    - name: NAMESPACE
+    - name: namespace
       type: string
       description: The target Kubernetes namespace.
-      default: "saritasa-test"
+    - name: deployment-timeout
+      type: string
+      description: The timeout for the deployment rollout check
   steps:
+    - name: create-deployment
+      image: alpine/k8s:1.20.4
+      script: |
+        #!/bin/sh
+        set -e
+        DEPLOY_NAME="$(params.deployment-name)"
+        NS="$(params.namespace)"
+        CONTAINER="$(params.container-name)"
+        FULL_IMAGE="$(params.image-name):$(params.tag)"
+
+        if ! kubectl get deployment "$DEPLOY_NAME" -n "$NS" >/dev/null 2>&1; then
+          echo "Deployment $DEPLOY_NAME does not exist. Creating..."
+          cat <<EOF | kubectl apply -f -
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: $DEPLOY_NAME
+          namespace: $NS
+        spec:
+          selector:
+            matchLabels:
+              app: $DEPLOY_NAME
+          template:
+            metadata:
+              labels:
+                app: $DEPLOY_NAME
+            spec:
+              serviceAccountName: pipeline-service-account
+              nodeSelector:
+                node: hp
+              imagePullSecrets:
+                - name: ghcr-creds
+              containers:
+                - name: $CONTAINER
+                  image: $FULL_IMAGE
+        EOF
+        else
+          echo "Deployment $DEPLOY_NAME already exists."
+        fi
+
     - name: patch-deployment
       image: alpine/k8s:1.20.4
       script: |
         #!/bin/sh
         set -e
+        DEPLOY_NAME="$(params.deployment-name)"
+        NS="$(params.namespace)"
+        CONTAINER="$(params.container-name)"
+        FULL_IMAGE="$(params.image-name):$(params.tag)"
 
-        if ! kubectl get deployment $(params.DEPLOYMENT_NAME) -n $(params.NAMESPACE) >/dev/null 2>&1; then
-          echo "Deployment '$(params.DEPLOYMENT_NAME)' does not exist in namespace '$(params.NAMESPACE)'. Creating it..."
-          kubectl create deployment $(params.DEPLOYMENT_NAME) --image=$(params.IMAGE_NAME):$(params.TAG) -n $(params.NAMESPACE)
-          kubectl patch deployment $(params.DEPLOYMENT_NAME) -n $(params.NAMESPACE) --type='json' -p="[{\"op\": \"replace\", \"path\": \"/spec/template/spec/containers/0/name\", \"value\": \"$(params.CONTAINER_NAME)\"}, {\"op\": \"add\", \"path\": \"/spec/template/spec/imagePullSecrets\", \"value\": [{\"name\": \"ghcr-creds\"}]}, {\"op\": \"add\", \"path\": \"/spec/template/spec/serviceAccountName\", \"value\": \"pipeline-service-account\"}, {\"op\": \"add\", \"path\": \"/spec/template/spec/nodeSelector\", \"value\": {\"node\": \"hp\"}}]"
-        else
-          echo "Patching deployment '$(params.DEPLOYMENT_NAME)' in namespace '$(params.NAMESPACE)'..."
-          echo "Setting image for container '$(params.CONTAINER_NAME)' to '$(params.IMAGE_NAME):$(params.TAG)'..."
+        echo "Updating deployment image..."
+        kubectl set image deployment/$DEPLOY_NAME $CONTAINER=$FULL_IMAGE -n $NS
 
-          # Update the deployment's container image
-          kubectl set image deployment/$(params.DEPLOYMENT_NAME) \
-            $(params.CONTAINER_NAME)=$(params.IMAGE_NAME):$(params.TAG) \
-            -n $(params.NAMESPACE)
-
-          # Ensure the deployment is scheduled on the node with label node=hp
-          kubectl patch deployment $(params.DEPLOYMENT_NAME) -n $(params.NAMESPACE) -p '{"spec":{"template":{"spec":{"nodeSelector":{"node":"hp"}}}}}'
+        echo "Waiting for rollout..."
+        if ! kubectl rollout status deployment/$DEPLOY_NAME -n $NS --timeout="$(params.deployment-timeout)"; then
+          echo "ERROR: Timeout or rollout failed!" >&2
+          exit 1
         fi
-
-        # Monitor and verify the rollout status
-        echo "Waiting for rollout to complete..."
-        kubectl rollout status deployment/$(params.DEPLOYMENT_NAME) -n $(params.NAMESPACE)
