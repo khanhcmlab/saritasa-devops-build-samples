@@ -47,9 +47,8 @@ cat <<EOF | kubectl apply -f -
         value: "true"
       - name: timeout
         value: "5m"
+      - name: deployment-timeout
+        value: "30s"
       - name: changed-modules
-        value:
-          - "web-servers/nginx-sample"
-          - "web-servers/httpd-sample"
-          - "nodejs/react-yarn"
+        value: '["web-servers/nginx-sample", "web-servers/httpd-sample", "nodejs/react-yarn"]'
 EOF

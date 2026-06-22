@@ -32,7 +32,7 @@ spec:
       type: string
       description: Clean out the contents of the repo's destination directory if it already exists before cloning.
     - name: changed-modules
-      type: array
+      type: string
       description: The list of changed modules to build.
     - name: timeout
       type: string
@@ -41,11 +41,39 @@ spec:
       type: string
       description: The timeout for the deployment rollout check
   tasks:
+    - name: parse-changed-modules
+      params:
+        - name: changed-modules
+          value: "$(params.changed-modules)"
+      taskSpec:
+        params:
+          - name: changed-modules
+            type: string
+        results:
+          - name: changed-modules
+            type: array
+        steps:
+          - name: parse
+            image: alpine/k8s:1.33.13
+            env:
+              - name: CHANGED_MODULES
+                value: "$(params.changed-modules)"
+            script: |
+              #!/bin/sh
+              CLEANED=$(echo -n "${CHANGED_MODULES}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+              echo -n "${CLEANED}" | jq -Rs '
+                if . == "" or . == "[]" or . == "[\"\"]" then []
+                elif startswith("[") then fromjson
+                else gsub(","; " ") | split(" ") | map(select(. != ""))
+                end
+              ' -c > "$(results.changed-modules.path)"
     - name: dispatch-pipelineruns
+      runAfter:
+        - parse-changed-modules
       matrix:
         params:
           - name: component
-            value: $(params.changed-modules[*])
+            value: $(tasks.parse-changed-modules.results.changed-modules[*])
       taskRef:
         name: dispatch-pipelinerun
       params:
@@ -71,7 +99,7 @@ spec:
           value: "$(context.pipelineRun.name)"
         - name: changed-modules
           value:
-            - "$(params.changed-modules[*])"
+            - "$(tasks.parse-changed-modules.results.changed-modules[*])"
         - name: timeout
           value: "$(params.timeout)"
         - name: deployment-timeout
