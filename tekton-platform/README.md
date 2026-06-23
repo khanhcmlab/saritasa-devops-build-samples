@@ -9,13 +9,15 @@ This directory contains the Tekton CI/CD pipeline configuration designed to auto
     *   `orchestrator-pipeline.yaml`: Entrypoint orchestrator pipeline that runs matrix dispatching for all changed component modules in parallel.
     *   `component-pipeline.yaml`: Builder pipeline that runs for each changed component to clone the repository, configure build variables, build using Cloud Native Buildpacks, and deploy the application.
 *   **`tasks/`**: Declares individual Tekton tasks containing their inline script logic:
+    *   `parse-changed-modules.yaml`: Parses the list of changed files/paths and outputs a distinct JSON array of changed component modules to build.
     *   `configure-component.yaml`: Dynamically configures building variables (builder image, target image name, environment variables, default process type, etc.) for a specific component and ensures a `project.toml` configuration is present.
-    *   `dispatch-pipelinerun.yaml`: Dynamically triggers a child `component-pipeline` PipelineRun with dedicated workspace/cache PVC configurations, managing stagger delays and concurrency checks.
+    *   `dispatch-pipelinerun.yaml`: Dynamically triggers a child `component-pipeline` PipelineRun with dedicated workspace/cache PVC configurations, managing stagger delays, concurrency checks, and order-based scheduling.
     *   `patch-deployment.yaml`: Patches the target Kubernetes deployment container with the newly built image tag, creating the deployment if it does not exist, and monitors the rollout to completion.
-*   **`templates/`**: Contains language/framework-specific default configuration templates (e.g., `default.toml` files for Node.js, Go, Python, Java, etc.) that can be referenced for component builds.
-*   **`triggers/`**: Configures EventListeners (`event-listener.yaml`), TriggerBindings (`github-binding.yaml`), and TriggerTemplates (`trigger-template.yaml`) to trigger builds automatically via Git webhooks.
-*   **`scripts/`**: Contains helper utility scripts for workspace management:
-    *   `stop-all-running-pipelinerun.sh`: Helper script to cancel/stop all running pipeline runs in the namespace.
+*   **`triggers/`**: Configures EventListeners (`event-listener.yaml`), TriggerBindings (`github-binding.yaml`, `component-dispatch-binding.yaml`), and TriggerTemplates (`trigger-template.yaml`, `component-dispatch-template.yaml`) to process webhook payloads and dispatch orchestrator or component pipelines.
+*   **`tests/`**: Contains local test files:
+    *   `mock-pipeline-run.sh`: Triggers a mock local orchestrator PipelineRun simulating a GitHub webhook dispatch event.
+*   **`scripts/`**: Contains helper utility scripts:
+    *   `stop-all-running-pipelinerun.sh`: Cancels/stops all running PipelineRuns in the namespace.
 
 
 ---
