@@ -26,7 +26,7 @@ spec:
     - name: changed-modules
       value: $(extensions.changed_modules)
     - name: pipeline-timeout
-      value: "5m"
+      value: "10m"
     - name: deployment-timeout
       value: "60s"
     - name: workspace-size
