@@ -40,7 +40,7 @@ spec:
     - name: deployment-timeout
       type: string
       description: The timeout for the deployment rollout check
-    - name: size
+    - name: workspace-size
       type: string
       default: "1Gi"
       description: The size of the component pipeline workspace.
@@ -88,5 +88,5 @@ spec:
           value: "$(params.timeout)"
         - name: deployment-timeout
           value: "$(params.deployment-timeout)"
-        - name: size
-          value: "$(params.size)"
+        - name: workspace-size
+          value: "$(params.workspace-size)"

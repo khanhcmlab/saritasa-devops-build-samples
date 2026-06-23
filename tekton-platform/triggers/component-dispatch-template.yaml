@@ -33,7 +33,7 @@ spec:
       description: The timeout for the child PipelineRun.
     - name: deployment-timeout
       description: The timeout for the deployment rollout check
-    - name: size
+    - name: workspace-size
       description: The workspace storage size.
   resourcetemplates:
     - apiVersion: tekton.dev/v1beta1
@@ -62,7 +62,7 @@ spec:
                   - ReadWriteOnce
                 resources:
                   requests:
-                    storage: $(tt.params.size)
+                    storage: $(tt.params.workspace-size)
           - name: cache
             persistentVolumeClaim:
               claimName: shared-cache-pvc

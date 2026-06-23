@@ -52,7 +52,7 @@ spec:
     - name: deployment-timeout
       type: string
       description: The timeout for the deployment rollout check.
-    - name: size
+    - name: workspace-size
       type: string
       default: "1Gi"
       description: The workspace storage size.
@@ -106,7 +106,7 @@ spec:
             "parent-pipelinerun": "$(params.parent-pipelinerun)",
             "timeout": "$(params.timeout)",
             "deployment-timeout": "$(params.deployment-timeout)",
-            "size": "$(params.size)"
+            "workspace-size": "$(params.workspace-size)"
           }' \
           "http://el-gh-event-listener.${PARAM_NAMESPACE}.svc.cluster.local:8080")
 
