@@ -46,7 +46,7 @@ spec:
     - name: changed-modules
       type: array
       description: The ordered list of changed modules (used for stagger index).
-    - name: timeout
+    - name: pipeline-timeout
       type: string
       description: The timeout for the component pipeline.
     - name: deployment-timeout
@@ -104,7 +104,7 @@ spec:
             "clone-depth": "$(params.clone-depth)",
             "delete-existing": "$(params.delete-existing)",
             "parent-pipelinerun": "$(params.parent-pipelinerun)",
-            "timeout": "$(params.timeout)",
+            "pipeline-timeout": "$(params.pipeline-timeout)",
             "deployment-timeout": "$(params.deployment-timeout)",
             "workspace-size": "$(params.workspace-size)"
           }' \

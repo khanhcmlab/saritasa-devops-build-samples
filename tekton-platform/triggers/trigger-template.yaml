@@ -24,7 +24,7 @@ spec:
       description: Clean out the contents of the repo's destination directory if it already exists before cloning.
     - name: changed-modules
       description: The list of changed modules to build.
-    - name: timeout
+    - name: pipeline-timeout
       description: The timeout for the component pipelines
     - name: deployment-timeout
       description: The timeout for the deployment rollout check
@@ -61,8 +61,8 @@ spec:
             value: $(tt.params.delete-existing)
           - name: changed-modules
             value: $(tt.params.changed-modules)
-          - name: timeout
-            value: $(tt.params.timeout)
+          - name: pipeline-timeout
+            value: $(tt.params.pipeline-timeout)
           - name: deployment-timeout
             value: $(tt.params.deployment-timeout)
 

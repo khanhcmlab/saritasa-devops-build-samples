@@ -45,7 +45,7 @@ cat <<EOF | kubectl apply -f -
         value: "2"
       - name: delete-existing
         value: "true"
-      - name: timeout
+      - name: pipeline-timeout
         value: "5m"
       - name: deployment-timeout
         value: "60s"

@@ -25,7 +25,7 @@ spec:
       value: "true"
     - name: changed-modules
       value: $(extensions.changed_modules)
-    - name: timeout
+    - name: pipeline-timeout
       value: "5m"
     - name: deployment-timeout
       value: "60s"

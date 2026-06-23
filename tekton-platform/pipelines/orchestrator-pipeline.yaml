@@ -34,7 +34,7 @@ spec:
     - name: changed-modules
       type: string
       description: The list of changed modules to build.
-    - name: timeout
+    - name: pipeline-timeout
       type: string
       description: The timeout for the component pipelines
     - name: deployment-timeout
@@ -84,8 +84,8 @@ spec:
         - name: changed-modules
           value:
             - "$(tasks.parse-changed-modules.results.changed-modules[*])"
-        - name: timeout
-          value: "$(params.timeout)"
+        - name: pipeline-timeout
+          value: "$(params.pipeline-timeout)"
         - name: deployment-timeout
           value: "$(params.deployment-timeout)"
         - name: workspace-size

@@ -29,7 +29,7 @@ spec:
       description: Clean out the contents of the repo's destination directory if it already exists before cloning.
     - name: parent-pipelinerun
       description: The name of the parent orchestrator PipelineRun.
-    - name: timeout
+    - name: pipeline-timeout
       description: The timeout for the child PipelineRun.
     - name: deployment-timeout
       description: The timeout for the deployment rollout check
@@ -46,7 +46,7 @@ spec:
       spec:
         status: PipelineRunPending
         timeouts:
-          pipeline: $(tt.params.timeout)
+          pipeline: $(tt.params.pipeline-timeout)
         serviceAccountName: pipeline-service-account
         pipelineRef:
           name: component-pipeline

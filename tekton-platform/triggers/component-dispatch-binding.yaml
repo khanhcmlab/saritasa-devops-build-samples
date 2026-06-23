@@ -29,8 +29,8 @@ spec:
       value: $(body.delete-existing)
     - name: parent-pipelinerun
       value: $(body.parent-pipelinerun)
-    - name: timeout
-      value: $(body.timeout)
+    - name: pipeline-timeout
+      value: $(body.pipeline-timeout)
     - name: deployment-timeout
       value: $(body.deployment-timeout)
     - name: workspace-size
