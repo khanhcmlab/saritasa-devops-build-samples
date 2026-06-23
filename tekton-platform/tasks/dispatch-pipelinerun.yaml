@@ -171,22 +171,62 @@ spec:
         CURRENT_MODULE="$(params.component)"
         PARENT_RUN="$(params.parent-pipelinerun)"
 
-        INDEX=0
-        for mod in "$@"; do
-          if [ "${mod}" = "${CURRENT_MODULE}" ]; then
-            break
-          fi
-          INDEX=$((INDEX + 1))
-        done
+        # Find index of a module within changed modules array
+        find_module_index() {
+          local current="$1"
+          shift
+          local idx=0
+          for mod in "$@"; do
+            if [ "${mod}" = "${current}" ]; then
+              echo "${idx}"
+              return 0
+            fi
+            idx=$((idx + 1))
+          done
+          echo "${idx}"
+        }
 
-        # Stagger concurrency check to prevent race conditions during starting
-        STAGGER_DELAY=$((INDEX * 10))
-        echo "Staggering concurrency check by ${STAGGER_DELAY} seconds (index: ${INDEX})..."
-        sleep ${STAGGER_DELAY}
+        # Query all child PipelineRuns belonging to this orchestrator run
+        get_child_runs_json() {
+          kubectl get pipelinerun -n "${PARAM_NAMESPACE}" \
+            -l "orchestrator-pipelinerun=${PARENT_RUN}" -o json 2>/dev/null || echo "{}"
+        }
 
-        # Function to get count of active (running) component PipelineRuns
+        # Check if a component's PipelineRun has completed execution
+        is_component_completed() {
+          local json="$1"
+          local comp="$2"
+          echo "${json}" | jq --arg comp "${comp}" '
+            [.items[] |
+            select(.spec.params[]? | select(.name == "component" and .value == $comp)) |
+            select(.status.conditions[]? | select(.type == "Succeeded" and (.status == "True" or .status == "False")))] |
+            length > 0
+          ' 2>/dev/null || echo "false"
+        }
+
+        # Count preceding components in changed-modules array that are not yet completed
+        count_uncompleted_preceding() {
+          local json="$1"
+          shift
+          local count=0
+          local idx=0
+          for mod in "$@"; do
+            if [ "${idx}" -ge "${INDEX}" ]; then
+              break
+            fi
+            local completed
+            completed=$(is_component_completed "${json}" "${mod}")
+            if [ "${completed}" != "true" ]; then
+              count=$((count + 1))
+            fi
+            idx=$((idx + 1))
+          done
+          echo "${count}"
+        }
+
+        # Count globally running component PipelineRuns in the namespace
         get_active_count() {
-          kubectl get pipelinerun -n ${PARAM_NAMESPACE} -o json 2>/dev/null | \
+          kubectl get pipelinerun -n "${PARAM_NAMESPACE}" -o json 2>/dev/null | \
             jq '[.items[] |
             select(.spec.pipelineRef.name == "component-pipeline") |
             select(.spec.status != "PipelineRunPending") |
@@ -195,35 +235,20 @@ spec:
             length == 0))] | length' 2>/dev/null || echo "0"
         }
 
-        # Enforce concurrency limit before starting execution
+        # Resolve stagger details and wait-concurrency parameters
+        INDEX=$(find_module_index "${CURRENT_MODULE}" "$@")
+        STAGGER_DELAY=$((INDEX * 10))
+
+        echo "Staggering concurrency check by ${STAGGER_DELAY} seconds (index: ${INDEX})..."
+        sleep ${STAGGER_DELAY}
+
+        # Main concurrency and ordering wait loop
         while true; do
           ACTIVE_COUNT=$(get_active_count)
           echo "Current active running component PipelineRuns in namespace: ${ACTIVE_COUNT} (max: ${MAX_CONCURRENCY})"
 
-          # Fetch all child PipelineRuns belonging to the parent run
-          CHILD_RUNS_JSON=$(kubectl get pipelinerun -n ${PARAM_NAMESPACE} \
-            -l orchestrator-pipelinerun=${PARENT_RUN} -o json 2>/dev/null || echo "{}")
-
-          UNCOMPLETED_PRECEDING=0
-          idx=0
-          for mod in "$@"; do
-            if [ ${idx} -ge ${INDEX} ]; then
-              break
-            fi
-
-            IS_COMPLETED=$(echo "${CHILD_RUNS_JSON}" | jq --arg comp "${mod}" '
-              [.items[] |
-              select(.spec.params[]? | select(.name == "component" and .value == $comp)) |
-              select(.status.conditions[]? | select(.type == "Succeeded" and (.status == "True" or .status == "False")))] |
-              length > 0
-            ' 2>/dev/null || echo "false")
-
-            if [ "${IS_COMPLETED}" != "true" ]; then
-              UNCOMPLETED_PRECEDING=$((UNCOMPLETED_PRECEDING + 1))
-            fi
-            idx=$((idx + 1))
-          done
-
+          CHILD_RUNS_JSON=$(get_child_runs_json)
+          UNCOMPLETED_PRECEDING=$(count_uncompleted_preceding "${CHILD_RUNS_JSON}" "$@")
           echo "Preceding uncompleted components for index ${INDEX}: ${UNCOMPLETED_PRECEDING} (max: ${MAX_CONCURRENCY})"
 
           if [ "${ACTIVE_COUNT}" -lt "${MAX_CONCURRENCY}" ] && [ "${UNCOMPLETED_PRECEDING}" -lt "${MAX_CONCURRENCY}" ]; then
