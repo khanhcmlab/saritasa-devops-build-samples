@@ -170,6 +170,7 @@ spec:
         PARAM_NAMESPACE="$(params.namespace)"
         MAX_CONCURRENCY="$(params.max-concurrency)"
         CURRENT_MODULE="$(params.component)"
+        PARENT_RUN="$(params.parent-pipelinerun)"
 
         INDEX=0
         for mod in "$@"; do
@@ -198,11 +199,40 @@ spec:
         # Enforce concurrency limit before starting execution
         while true; do
           ACTIVE_COUNT=$(get_active_count)
-          echo "Current active running component PipelineRuns: ${ACTIVE_COUNT} (max allowed: ${MAX_CONCURRENCY})"
-          if [ "${ACTIVE_COUNT}" -lt "${MAX_CONCURRENCY}" ]; then
+          echo "Current active running component PipelineRuns in namespace: ${ACTIVE_COUNT} (max: ${MAX_CONCURRENCY})"
+
+          # Fetch all child PipelineRuns belonging to the parent run
+          CHILD_RUNS_JSON=$(kubectl get pipelinerun -n ${PARAM_NAMESPACE} \
+            -l orchestrator-pipelinerun=${PARENT_RUN} -o json 2>/dev/null || echo "{}")
+
+          UNCOMPLETED_PRECEDING=0
+          idx=0
+          for mod in "$@"; do
+            if [ ${idx} -ge ${INDEX} ]; then
+              break
+            fi
+
+            IS_COMPLETED=$(echo "${CHILD_RUNS_JSON}" | jq --arg comp "${mod}" '
+              [.items[] |
+              select(.spec.params[]? | select(.name == "component" and .value == $comp)) |
+              select(.status.conditions[]? | select(.type == "Succeeded" and (.status == "True" or .status == "False")))] |
+              length > 0
+            ' 2>/dev/null || echo "false")
+
+            if [ "${IS_COMPLETED}" != "true" ]; then
+              UNCOMPLETED_PRECEDING=$((UNCOMPLETED_PRECEDING + 1))
+            fi
+            idx=$((idx + 1))
+          done
+
+          echo "Preceding uncompleted components for index ${INDEX}: ${UNCOMPLETED_PRECEDING} (max: ${MAX_CONCURRENCY})"
+
+          if [ "${ACTIVE_COUNT}" -lt "${MAX_CONCURRENCY}" ] && [ "${UNCOMPLETED_PRECEDING}" -lt "${MAX_CONCURRENCY}" ]; then
+            echo "Conditions met. Proceeding to start component PipelineRun."
             break
           fi
-          echo "Concurrency limit reached. Waiting 10 seconds..."
+
+          echo "Concurrency limit or ordering constraint active. Waiting 10 seconds..."
           sleep 10
         done
 
