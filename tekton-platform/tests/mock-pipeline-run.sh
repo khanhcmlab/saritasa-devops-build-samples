@@ -48,7 +48,7 @@ cat <<EOF | kubectl apply -f -
       - name: timeout
         value: "5m"
       - name: deployment-timeout
-        value: "30s"
+        value: "60s"
       - name: changed-modules
         value: '["python/pipenv", "dotnet-core/fde-app", "nodejs/react-yarn", "java/dist-zip"]'
 EOF

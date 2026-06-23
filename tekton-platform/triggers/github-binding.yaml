@@ -28,4 +28,4 @@ spec:
     - name: timeout
       value: "5m"
     - name: deployment-timeout
-      value: "30s"
+      value: "60s"

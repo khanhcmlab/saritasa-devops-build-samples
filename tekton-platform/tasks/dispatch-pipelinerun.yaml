@@ -52,6 +52,11 @@ spec:
     - name: deployment-timeout
       type: string
       description: The timeout for the deployment rollout check.
+    - name: size
+      type: string
+      default: "1Gi"
+      description: The workspace storage size.
+
 
   steps:
     - name: dispatch-request
@@ -66,6 +71,20 @@ spec:
         set -e
 
         PARAM_NAMESPACE="$(params.namespace)"
+        CURRENT_MODULE="$(params.component)"
+
+        INDEX=0
+        for mod in "$@"; do
+          if [ "${mod}" = "${CURRENT_MODULE}" ]; then
+            break
+          fi
+          INDEX=$((INDEX + 1))
+        done
+
+        # Stagger HTTP dispatch requests slightly to prevent API collisions
+        CURL_DELAY=$((INDEX * 1))
+        echo "Staggering HTTP dispatch by ${CURL_DELAY} seconds (index: ${INDEX})...."
+        sleep ${CURL_DELAY}
 
         COMPONENT_CLEAN=$(echo "$(params.component)" | tr '/_' '--')
         echo "Dispatching pending PipelineRun for component: $(params.component) (clean name: ${COMPONENT_CLEAN}) via EventListener..."
@@ -86,7 +105,8 @@ spec:
             "delete-existing": "$(params.delete-existing)",
             "parent-pipelinerun": "$(params.parent-pipelinerun)",
             "timeout": "$(params.timeout)",
-            "deployment-timeout": "$(params.deployment-timeout)"
+            "deployment-timeout": "$(params.deployment-timeout)",
+            "size": "$(params.size)"
           }' \
           "http://el-gh-event-listener.${PARAM_NAMESPACE}.svc.cluster.local:8080")
 
@@ -149,6 +169,20 @@ spec:
 
         PARAM_NAMESPACE="$(params.namespace)"
         MAX_CONCURRENCY="$(params.max-concurrency)"
+        CURRENT_MODULE="$(params.component)"
+
+        INDEX=0
+        for mod in "$@"; do
+          if [ "${mod}" = "${CURRENT_MODULE}" ]; then
+            break
+          fi
+          INDEX=$((INDEX + 1))
+        done
+
+        # Stagger concurrency check to prevent race conditions during starting
+        STAGGER_DELAY=$((INDEX * 10))
+        echo "Staggering concurrency check by ${STAGGER_DELAY} seconds (index: ${INDEX})..."
+        sleep ${STAGGER_DELAY}
 
         # Function to get count of active (running) component PipelineRuns
         get_active_count() {

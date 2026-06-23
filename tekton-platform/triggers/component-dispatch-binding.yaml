@@ -33,3 +33,6 @@ spec:
       value: $(body.timeout)
     - name: deployment-timeout
       value: $(body.deployment-timeout)
+    - name: size
+      value: $(body.size)
+
