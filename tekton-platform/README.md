@@ -32,8 +32,7 @@ This stage is triggered on any Git `push` event. It clones the repository, detec
 ```mermaid
 flowchart TD
     %% Input / Events
-    GitHub[GitHub Push Event] -->|HTTP POST JSON Payload| Webhook[Cloudflare Tunnel / ExternalName SVC]
-    Webhook -->|JSON Payload| EL[EventListener: gh-event-listener]
+    GitHub[GitHub Push Event] -->|HTTP POST JSON Payload|EL[EventListener: gh-event-listener]
 
     %% Webhook Triggers Processing
     EL -->|1. Validates secret & extracts changed files| GH_Int[GitHub Interceptor]
