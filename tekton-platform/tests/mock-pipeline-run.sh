@@ -45,10 +45,12 @@ cat <<EOF | kubectl apply -f -
         value: "2"
       - name: delete-existing
         value: "true"
-      - name: timeout
+      - name: pipeline-timeout
         value: "5m"
       - name: deployment-timeout
-        value: "30s"
+        value: "60s"
+      - name: workspace-size
+        value: "1Gi"
       - name: changed-modules
-        value: '["python/pipenv", "dotnet-core/fde-app", "nodejs/react-yarn", "java/dist-zip"]'
+        value: '["python/pipenv", "dotnet-core/fde-app", "nodejs/react-yarn", "java/dist-zip", "go/mod", "python/poetry", "ruby/puma"]'
 EOF

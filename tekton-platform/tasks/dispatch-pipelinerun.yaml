@@ -46,12 +46,16 @@ spec:
     - name: changed-modules
       type: array
       description: The ordered list of changed modules (used for stagger index).
-    - name: timeout
+    - name: pipeline-timeout
       type: string
       description: The timeout for the component pipeline.
     - name: deployment-timeout
       type: string
       description: The timeout for the deployment rollout check.
+    - name: workspace-size
+      type: string
+      description: The workspace storage size.
+
 
   steps:
     - name: dispatch-request
@@ -66,6 +70,20 @@ spec:
         set -e
 
         PARAM_NAMESPACE="$(params.namespace)"
+        CURRENT_MODULE="$(params.component)"
+
+        INDEX=0
+        for mod in "$@"; do
+          if [ "${mod}" = "${CURRENT_MODULE}" ]; then
+            break
+          fi
+          INDEX=$((INDEX + 1))
+        done
+
+        # Stagger HTTP dispatch requests slightly to prevent API collisions
+        CURL_DELAY=$((INDEX * 1))
+        echo "Staggering HTTP dispatch by ${CURL_DELAY} seconds (index: ${INDEX})...."
+        sleep ${CURL_DELAY}
 
         COMPONENT_CLEAN=$(echo "$(params.component)" | tr '/_' '--')
         echo "Dispatching pending PipelineRun for component: $(params.component) (clean name: ${COMPONENT_CLEAN}) via EventListener..."
@@ -85,8 +103,9 @@ spec:
             "clone-depth": "$(params.clone-depth)",
             "delete-existing": "$(params.delete-existing)",
             "parent-pipelinerun": "$(params.parent-pipelinerun)",
-            "timeout": "$(params.timeout)",
-            "deployment-timeout": "$(params.deployment-timeout)"
+            "pipeline-timeout": "$(params.pipeline-timeout)",
+            "deployment-timeout": "$(params.deployment-timeout)",
+            "workspace-size": "$(params.workspace-size)"
           }' \
           "http://el-gh-event-listener.${PARAM_NAMESPACE}.svc.cluster.local:8080")
 
@@ -149,25 +168,95 @@ spec:
 
         PARAM_NAMESPACE="$(params.namespace)"
         MAX_CONCURRENCY="$(params.max-concurrency)"
+        CURRENT_MODULE="$(params.component)"
+        PARENT_RUN="$(params.parent-pipelinerun)"
 
-        # Function to get count of active (running) component PipelineRuns
+        # Find index of a module within changed modules array
+        find_module_index() {
+          local current="$1"
+          shift
+          local idx=0
+          for mod in "$@"; do
+            if [ "${mod}" = "${current}" ]; then
+              echo "${idx}"
+              return 0
+            fi
+            idx=$((idx + 1))
+          done
+          echo "${idx}"
+        }
+
+        # Query all child PipelineRuns belonging to this orchestrator run
+        get_child_runs_json() {
+          kubectl get pipelinerun -n "${PARAM_NAMESPACE}" \
+            -l "orchestrator-pipelinerun=${PARENT_RUN}" -o json 2>/dev/null || echo "{}"
+        }
+
+        # Check if a component's PipelineRun has completed execution
+        is_component_completed() {
+          local json="$1"
+          local comp="$2"
+          echo "${json}" | jq --arg comp "${comp}" '
+            [.items[] |
+            select(.spec.params[]? | select(.name == "component" and .value == $comp)) |
+            select(.status.conditions[]? | select(.type == "Succeeded" and (.status == "True" or .status == "False")))] |
+            length > 0
+          ' 2>/dev/null || echo "false"
+        }
+
+        # Count preceding components in changed-modules array that are not yet completed
+        count_uncompleted_preceding() {
+          local json="$1"
+          shift
+          local count=0
+          local idx=0
+          for mod in "$@"; do
+            if [ "${idx}" -ge "${INDEX}" ]; then
+              break
+            fi
+            local completed
+            completed=$(is_component_completed "${json}" "${mod}")
+            if [ "${completed}" != "true" ]; then
+              count=$((count + 1))
+            fi
+            idx=$((idx + 1))
+          done
+          echo "${count}"
+        }
+
+        # Count globally running component PipelineRuns in the namespace
         get_active_count() {
-          kubectl get pipelinerun -n ${PARAM_NAMESPACE} -o json 2>/dev/null | \
-            jq '[.items[] | select(.spec.pipelineRef.name == "component-pipeline") | \
-            select(.spec.status != "PipelineRunPending") | \
-            select(.status.conditions == null or ([.status.conditions[]? | \
-            select(.type == "Succeeded" and (.status == "True" or .status == "False"))] | \
+          kubectl get pipelinerun -n "${PARAM_NAMESPACE}" -o json 2>/dev/null | \
+            jq '[.items[] |
+            select(.spec.pipelineRef.name == "component-pipeline") |
+            select(.spec.status != "PipelineRunPending") |
+            select(.status.conditions == null or ([.status.conditions[]? |
+            select(.type == "Succeeded" and (.status == "True" or .status == "False"))] |
             length == 0))] | length' 2>/dev/null || echo "0"
         }
 
-        # Enforce concurrency limit before starting execution
+        # Resolve stagger details and wait-concurrency parameters
+        INDEX=$(find_module_index "${CURRENT_MODULE}" "$@")
+        STAGGER_DELAY=$((INDEX * 10))
+
+        echo "Staggering concurrency check by ${STAGGER_DELAY} seconds (index: ${INDEX})..."
+        sleep ${STAGGER_DELAY}
+
+        # Main concurrency and ordering wait loop
         while true; do
           ACTIVE_COUNT=$(get_active_count)
-          echo "Current active running component PipelineRuns: ${ACTIVE_COUNT} (max allowed: ${MAX_CONCURRENCY})"
-          if [ "${ACTIVE_COUNT}" -lt "${MAX_CONCURRENCY}" ]; then
+          echo "Current active running component PipelineRuns in namespace: ${ACTIVE_COUNT} (max: ${MAX_CONCURRENCY})"
+
+          CHILD_RUNS_JSON=$(get_child_runs_json)
+          UNCOMPLETED_PRECEDING=$(count_uncompleted_preceding "${CHILD_RUNS_JSON}" "$@")
+          echo "Preceding uncompleted components for index ${INDEX}: ${UNCOMPLETED_PRECEDING} (max: ${MAX_CONCURRENCY})"
+
+          if [ "${ACTIVE_COUNT}" -lt "${MAX_CONCURRENCY}" ] && [ "${UNCOMPLETED_PRECEDING}" -lt "${MAX_CONCURRENCY}" ]; then
+            echo "Conditions met. Proceeding to start component PipelineRun."
             break
           fi
-          echo "Concurrency limit reached. Waiting 10 seconds..."
+
+          echo "Concurrency limit or ordering constraint active. Waiting 10 seconds..."
           sleep 10
         done
 
