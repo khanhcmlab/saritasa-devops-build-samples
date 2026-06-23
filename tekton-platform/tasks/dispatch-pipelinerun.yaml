@@ -187,10 +187,11 @@ spec:
         # Function to get count of active (running) component PipelineRuns
         get_active_count() {
           kubectl get pipelinerun -n ${PARAM_NAMESPACE} -o json 2>/dev/null | \
-            jq '[.items[] | select(.spec.pipelineRef.name == "component-pipeline") | \
-            select(.spec.status != "PipelineRunPending") | \
-            select(.status.conditions == null or ([.status.conditions[]? | \
-            select(.type == "Succeeded" and (.status == "True" or .status == "False"))] | \
+            jq '[.items[] |
+            select(.spec.pipelineRef.name == "component-pipeline") |
+            select(.spec.status != "PipelineRunPending") |
+            select(.status.conditions == null or ([.status.conditions[]? |
+            select(.type == "Succeeded" and (.status == "True" or .status == "False"))] |
             length == 0))] | length' 2>/dev/null || echo "0"
         }
 
