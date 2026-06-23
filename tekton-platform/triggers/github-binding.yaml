@@ -29,3 +29,5 @@ spec:
       value: "5m"
     - name: deployment-timeout
       value: "60s"
+    - name: workspace-size
+      value: "1Gi"

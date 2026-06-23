@@ -28,6 +28,8 @@ spec:
       description: The timeout for the component pipelines
     - name: deployment-timeout
       description: The timeout for the deployment rollout check
+    - name: workspace-size
+      description: The workspace storage size.
   resourcetemplates:
     - apiVersion: tekton.dev/v1beta1
       kind: PipelineRun
@@ -65,5 +67,7 @@ spec:
             value: $(tt.params.pipeline-timeout)
           - name: deployment-timeout
             value: $(tt.params.deployment-timeout)
+          - name: workspace-size
+            value: $(tt.params.workspace-size)
 
 

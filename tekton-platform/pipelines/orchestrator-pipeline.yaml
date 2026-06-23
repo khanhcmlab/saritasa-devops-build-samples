@@ -42,7 +42,6 @@ spec:
       description: The timeout for the deployment rollout check
     - name: workspace-size
       type: string
-      default: "1Gi"
       description: The size of the component pipeline workspace.
   tasks:
     - name: parse-changed-modules
