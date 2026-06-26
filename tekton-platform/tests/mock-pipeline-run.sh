@@ -54,5 +54,5 @@ cat <<EOF | kubectl apply -f -
       - name: find-child-timeout
         value: "30"
       - name: changed-modules
-        value: '["python/pipenv", "dotnet-core/fde-app", "nodejs/react-yarn", "java/dist-zip", "go/mod", "python/poetry", "ruby/puma"]'
+        value: '["java/java-node/gradle-node", "python/pipenv", "dotnet-core/fde-app", "nodejs/react-yarn", "java/dist-zip", "go/mod", "python/poetry", "ruby/puma"]'
 EOF
