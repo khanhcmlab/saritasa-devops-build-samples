@@ -48,11 +48,11 @@ flowchart TD
         ParseModules -->|Matrix over parsed array| Task_Dispatch[Task: dispatch-pipelinerun]
 
         subgraph dispatch-pipelinerun Steps
-            Task_Dispatch --> DispReq[1. dispatch-request]
+            Task_Dispatch --> WaitSlot[1. wait-concurrency-slot]
+            WaitSlot -->|Polls active count vs max-concurrency| DispReq[2. dispatch-request]
             DispReq -->|HTTP POST to EventListener| EL_Child[EventListener: gh-event-listener]
-            DispReq -->|Writes eventID| FindChild[2. find-child-pipelinerun]
-            FindChild -->|Discovers child name| WaitSlot[3. wait-concurrency-slot]
-            WaitSlot -->|Polls active count vs max-concurrency| StartChild[4. start-pipelinerun]
+            DispReq -->|Writes eventID| FindChild[3. find-child-pipelinerun]
+            FindChild -->|Discovers child name| StartChild[4. start-pipelinerun]
             StartChild -->|Patches spec.status=null| MonitorChild[5. monitor-pipelinerun]
             MonitorChild -->|Polls until Succeeded=True/False| End([Done])
         end
