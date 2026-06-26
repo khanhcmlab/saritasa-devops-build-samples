@@ -43,6 +43,9 @@ spec:
     - name: workspace-size
       type: string
       description: The size of the component pipeline workspace.
+    - name: find-child-timeout
+      type: string
+      description: Timeout in seconds to wait for the child PipelineRun to be created.
   tasks:
     - name: parse-changed-modules
       taskRef:
@@ -89,3 +92,5 @@ spec:
           value: "$(params.deployment-timeout)"
         - name: workspace-size
           value: "$(params.workspace-size)"
+        - name: find-child-timeout
+          value: "$(params.find-child-timeout)"

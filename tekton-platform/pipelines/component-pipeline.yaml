@@ -44,6 +44,7 @@ spec:
       description: Workspace for caching buildpack layers.
   tasks:
     - name: git-clone
+      # Reference: https://raw.githubusercontent.com/tektoncd/catalog/main/task/git-clone/0.9/git-clone.yaml
       taskRef:
         name: git-clone
       workspaces:
@@ -73,7 +74,7 @@ spec:
           value: "$(params.registry-path)"
         - name: component
           value: "$(params.component)"
-    - name: buildpacks
+    - name: build
       runAfter:
         - configure-component
       taskRef:
@@ -99,15 +100,15 @@ spec:
           value: "1001"
         - name: GROUP_ID
           value: "1000"
-    - name: patch-deployment
+    - name: deploy
       runAfter:
-        - buildpacks
+        - build
       when:
         - input: "$(params.action)"
           operator: in
           values: ["deploy"]
       taskRef:
-        name: patch-deployment
+        name: deploy
       workspaces:
         - name: source
           workspace: source-workspace

@@ -13,26 +13,6 @@ spec:
       value: $(body.git-revision)
     - name: git-repository-url
       value: $(body.git-repository-url)
-    - name: registry-path
-      value: $(body.registry-path)
-    - name: action
-      value: $(body.action)
-    - name: max-concurrency
-      value: $(body.max-concurrency)
-    - name: namespace
-      value: $(body.namespace)
-    - name: container-name
-      value: $(body.container-name)
-    - name: clone-depth
-      value: $(body.clone-depth)
-    - name: delete-existing
-      value: $(body.delete-existing)
     - name: parent-pipelinerun
       value: $(body.parent-pipelinerun)
-    - name: pipeline-timeout
-      value: $(body.pipeline-timeout)
-    - name: deployment-timeout
-      value: $(body.deployment-timeout)
-    - name: workspace-size
-      value: $(body.workspace-size)
 

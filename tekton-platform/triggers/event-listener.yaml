@@ -30,23 +30,25 @@ spec:
                   expression: |
                     extensions.changed_files.split(',')
                       .filter(f,
-                        f.contains('/') &&
-                        !(f.split('/')[0] in ['tekton-platform', 'tests', 'scripts', 'kubernetes', 'kustomize', 'docker']) &&
-                        f.split('/').size() >= ((f.startsWith('java/java-node/') || f.startsWith('java/native-image/')) ? 4 : 3)
-                      )
-                      .map(f,
-                        f.split('/')
-                          .slice(0, (f.startsWith('java/java-node/') || f.startsWith('java/native-image/')) ? 3 : 2)
-                          .join('/')
+                        !f.matches('^(tekton-platform|tests|scripts|kubernetes|kustomize|docker)/.*')
                       )
                       .distinct()
                       .marshalJSON()
+                      
       bindings:
         - ref: github-merge-binding
+        - ref: common-binding
       template:
         ref: trigger-template
     - name: dispatch-component-trigger
       interceptors:
+        - ref:
+            name: "github"
+          params:
+            - name: "secretRef"
+              value:
+                secretName: "github-webhook-secret"
+                secretKey: "token"
         - ref:
             name: "cel"
           params:
@@ -58,5 +60,6 @@ spec:
                   expression: "body.component.replace('/', '-').replace('_', '-')"
       bindings:
         - ref: component-dispatch-binding
+        - ref: common-binding
       template:
         ref: component-dispatch-template

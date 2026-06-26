@@ -1,0 +1,26 @@
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: TriggerBinding
+metadata:
+  name: common-binding
+spec:
+  params:
+    - name: action
+      value: "deploy"
+    - name: registry-path
+      value: "ghcr.io/dewwripper"
+    - name: max-concurrency
+      value: "2"
+    - name: namespace
+      value: "saritasa-test"
+    - name: container-name
+      value: "app"
+    - name: clone-depth
+      value: "2"
+    - name: delete-existing
+      value: "true"
+    - name: pipeline-timeout
+      value: "10m"
+    - name: deployment-timeout
+      value: "60s"
+    - name: workspace-size
+      value: "1Gi"

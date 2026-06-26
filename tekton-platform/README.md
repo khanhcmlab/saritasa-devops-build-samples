@@ -38,7 +38,9 @@ flowchart TD
     EL -->|1. Validates secret & extracts changed files| GH_Int[GitHub Interceptor]
     GH_Int -->|2. Computes changed_modules overlay| CEL_Int[CEL Interceptor]
     CEL_Int -->|3. Maps to parameters| Bind1[TriggerBinding: github-merge-binding]
+    CEL_Int -->|3. Maps to parameters| BindComm[TriggerBinding: common-binding]
     Bind1 -->|4. Resolves to template| Temp1[TriggerTemplate: trigger-template]
+    BindComm -->|4. Resolves to template| Temp1
     Temp1 -->|5. Spawns| PR1[PipelineRun: orchestrator-pipelinerun]
 
     %% Orchestrator Pipeline
@@ -48,12 +50,11 @@ flowchart TD
         ParseModules -->|Matrix over parsed array| Task_Dispatch[Task: dispatch-pipelinerun]
 
         subgraph dispatch-pipelinerun Steps
-            Task_Dispatch --> DispReq[1. dispatch-request]
+            Task_Dispatch --> WaitSlot[1. wait-concurrency-limit]
+            WaitSlot -->|Polls active count vs max-concurrency| DispReq[2. dispatch-request]
             DispReq -->|HTTP POST to EventListener| EL_Child[EventListener: gh-event-listener]
-            DispReq -->|Writes eventID| FindChild[2. find-child-pipelinerun]
-            FindChild -->|Discovers child name| WaitSlot[3. wait-concurrency-slot]
-            WaitSlot -->|Polls active count vs max-concurrency| StartChild[4. start-pipelinerun]
-            StartChild -->|Patches spec.status=null| MonitorChild[5. monitor-pipelinerun]
+            DispReq -->|Writes eventID| FindChild[3. find-child-pipelinerun]
+            FindChild -->|Discovers child name| MonitorChild[4. monitor-pipelinerun]
             MonitorChild -->|Polls until Succeeded=True/False| End([Done])
         end
     end
@@ -66,7 +67,7 @@ flowchart TD
 
     class PR1,Pipe1 pipeline
     class Task_Dispatch,ParseModules task
-    class EL,GH_Int,CEL_Int,Bind1,Temp1 trigger
+    class EL,GH_Int,CEL_Int,Bind1,BindComm,Temp1 trigger
     class GitHub,Webhook input
 ```
 
@@ -81,8 +82,10 @@ flowchart TD
     %% Webhook Triggers Processing
     EL_Child -->|Intercepts X-Event-Type: component-dispatch| CEL[CEL Interceptor]
     CEL -->|Computes component_clean overlay| Bind2[TriggerBinding: component-dispatch-binding]
+    CEL -->|Computes component_clean overlay| BindComm[TriggerBinding: common-binding]
     Bind2 -->|Parameters| Temp2[TriggerTemplate: component-dispatch-template]
-    Temp2 -->|Spawns in PipelineRunPending status| PR2[PipelineRun: component-pipelinerun]
+    BindComm -->|Parameters| Temp2
+    Temp2 -->|Spawns| PR2[PipelineRun: component-pipelinerun]
 
     %% Component Pipeline
     subgraph Component Pipeline
@@ -94,9 +97,8 @@ flowchart TD
             Task_Config --> Step_Cache[1. create-cache-dir]
             Step_Cache --> Step_Meta[2. prepare-metadata]
             Step_Meta --> Step_Builder[3. select-builder]
-            Step_Builder --> Step_Toml[4. ensure-project-toml]
-            Step_Toml --> Step_Env[5. parse-env-vars]
-            Step_Env --> Step_Proc[6. output-process-type]
+            Step_Builder --> Step_Env[4. parse-env-vars]
+            Step_Env --> Step_Proc[5. output-process-type]
         end
 
         Task_Config -->|builder, image, env-vars, process-type| Task_BP[Task: buildpacks]
@@ -119,7 +121,7 @@ flowchart TD
 
     class PR2,Pipe2 pipeline
     class Task_Clone,Task_Config,Task_BP,Task_Patch task
-    class EL_Child,CEL,Bind2,Temp2 trigger
+    class EL_Child,CEL,Bind2,BindComm,Temp2 trigger
     class DispReq input
     class Task_Deploy decision
 ```

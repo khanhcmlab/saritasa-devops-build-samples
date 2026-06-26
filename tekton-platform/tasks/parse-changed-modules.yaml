@@ -22,10 +22,34 @@ spec:
           value: "$(params.changed-modules)"
       script: |
         #!/bin/sh
+        
+        # Trim whitespace from input.
         CLEANED=$(echo -n "${CHANGED_MODULES}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-        echo -n "${CLEANED}" | jq -Rs '
+        
+        # Parse input into newline-separated list of file paths.
+        FILES=$(echo -n "${CLEANED}" | jq -Rs '
           if . == "" or . == "[]" or . == "[\"\"]" then []
           elif startswith("[") then fromjson
           else gsub(","; " ") | split(" ") | map(select(. != ""))
           end
-        ' -c > "$(results.changed-modules.path)"
+        ' | jq -r '.[]')
+        
+        # Extract module paths:
+        # - Java modules: split by /src/ and take the first part
+        # - Others: take the first two path segments
+        MODULES=""
+        for f in ${FILES}; do
+          case "${f}" in
+            java/*)
+              mod=$(echo "${f}" | sed 's|/src/.*||')
+              ;;
+            *)
+              mod=$(echo "${f}" | cut -d'/' -f1-2)
+              ;;
+          esac
+          MODULES="${MODULES}${mod}\n"
+        done
+        
+        # Deduplicate and convert to JSON array.
+        printf "${MODULES}" | sort -u | sed '/^$/d' | jq -Rsc 'split("\n") | map(select(. != ""))' \
+          > "$(results.changed-modules.path)"
