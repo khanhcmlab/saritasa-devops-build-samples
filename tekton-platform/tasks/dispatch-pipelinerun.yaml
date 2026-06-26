@@ -4,10 +4,10 @@ metadata:
   name: dispatch-pipelinerun
 spec:
   description: >-
-    Dispatches a child PipelineRun for a component via the EventListener, waits
-    for a concurrency slot, starts it, and monitors it until completion.
+    Waits for a concurrency slot, dispatches a child PipelineRun for a component
+    via the EventListener, and monitors it until completion.
 
-    Flow: wait-concurrency -> dispatch-request -> find-child -> start -> monitor
+    Flow: wait-concurrency -> dispatch-request -> find-child -> monitor
 
   params:
     - name: component
@@ -134,7 +134,6 @@ spec:
           kubectl get pipelinerun -n "${PARAM_NAMESPACE}" -o json 2>/dev/null | \
             jq '[.items[] |
             select(.spec.pipelineRef.name == "component-pipeline") |
-            select(.spec.status != "PipelineRunPending") |
             select(.status.conditions == null or ([.status.conditions[]? |
             select(.type == "Succeeded" and (.status == "True" or .status == "False"))] |
             length == 0))] | length' 2>/dev/null || echo "0"
@@ -202,7 +201,7 @@ spec:
         sleep ${CURL_DELAY}
 
         COMPONENT_CLEAN=$(echo "$(params.component)" | tr '/_' '--')
-        echo "Dispatching pending PipelineRun for component: $(params.component) (clean name: ${COMPONENT_CLEAN}) via EventListener..."
+        echo "Dispatching PipelineRun for component: $(params.component) (clean name: ${COMPONENT_CLEAN}) via EventListener..."
 
         WEBHOOK_SECRET=$(cat /etc/webhook-secret/token)
 
@@ -277,28 +276,7 @@ spec:
         fi
 
         echo -n "${CHILD_RUN}" > /shared/child_run
-        echo "Successfully dispatched child PipelineRun: ${CHILD_RUN} (currently Pending)"
-
-    - name: start-pipelinerun
-      image: alpine/k8s:1.33.13
-      volumeMounts:
-        - name: shared-data
-          mountPath: /shared
-      script: |
-        #!/bin/sh
-        set -e
-
-        PARAM_NAMESPACE="$(params.namespace)"
-        CHILD_RUN=$(cat /shared/child_run)
-
-        if [ -z "${CHILD_RUN}" ]; then
-          echo "Error: Child PipelineRun name not found in /shared/child_run."
-          exit 1
-        fi
-
-        # Start the pending child PipelineRun
-        echo "Starting pending child PipelineRun: ${CHILD_RUN}..."
-        kubectl patch pipelinerun "${CHILD_RUN}" -n "${PARAM_NAMESPACE}" --type=merge -p '{"spec":{"status":null}}'
+        echo "Successfully dispatched child PipelineRun: ${CHILD_RUN}"
 
     - name: monitor-pipelinerun
       image: alpine/k8s:1.33.13

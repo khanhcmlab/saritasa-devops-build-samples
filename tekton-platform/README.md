@@ -52,8 +52,7 @@ flowchart TD
             WaitSlot -->|Polls active count vs max-concurrency| DispReq[2. dispatch-request]
             DispReq -->|HTTP POST to EventListener| EL_Child[EventListener: gh-event-listener]
             DispReq -->|Writes eventID| FindChild[3. find-child-pipelinerun]
-            FindChild -->|Discovers child name| StartChild[4. start-pipelinerun]
-            StartChild -->|Patches spec.status=null| MonitorChild[5. monitor-pipelinerun]
+            FindChild -->|Discovers child name| MonitorChild[4. monitor-pipelinerun]
             MonitorChild -->|Polls until Succeeded=True/False| End([Done])
         end
     end
@@ -82,7 +81,7 @@ flowchart TD
     EL_Child -->|Intercepts X-Event-Type: component-dispatch| CEL[CEL Interceptor]
     CEL -->|Computes component_clean overlay| Bind2[TriggerBinding: component-dispatch-binding]
     Bind2 -->|Parameters| Temp2[TriggerTemplate: component-dispatch-template]
-    Temp2 -->|Spawns in PipelineRunPending status| PR2[PipelineRun: component-pipelinerun]
+    Temp2 -->|Spawns| PR2[PipelineRun: component-pipelinerun]
 
     %% Component Pipeline
     subgraph Component Pipeline

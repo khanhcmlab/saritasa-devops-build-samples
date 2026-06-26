@@ -44,7 +44,6 @@ spec:
         labels:
           orchestrator-pipelinerun: $(tt.params.parent-pipelinerun)
       spec:
-        status: PipelineRunPending
         timeouts:
           pipeline: $(tt.params.pipeline-timeout)
         serviceAccountName: pipeline-service-account

@@ -22,7 +22,6 @@ rules:
       - get
       - list
       - watch
-      - patch
   - apiGroups:
       - triggers.tekton.dev
     resources:
