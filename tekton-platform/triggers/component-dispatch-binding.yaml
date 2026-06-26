@@ -13,26 +13,6 @@ spec:
       value: $(body.git-revision)
     - name: git-repository-url
       value: $(body.git-repository-url)
-    - name: registry-path
-      value: "ghcr.io/dewwripper"
-    - name: action
-      value: "deploy"
-    - name: max-concurrency
-      value: "2"
-    - name: namespace
-      value: "saritasa-test"
-    - name: container-name
-      value: "app"
-    - name: clone-depth
-      value: "2"
-    - name: delete-existing
-      value: "true"
     - name: parent-pipelinerun
       value: $(body.parent-pipelinerun)
-    - name: pipeline-timeout
-      value: "10m"
-    - name: deployment-timeout
-      value: "60s"
-    - name: workspace-size
-      value: "1Gi"
 
