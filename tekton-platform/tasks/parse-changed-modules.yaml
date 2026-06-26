@@ -23,6 +23,14 @@ spec:
       script: |
         #!/bin/sh
         
+        # Skip processing if CHANGED_MODULES starts with an excluded prefix.
+        case "${CHANGED_MODULES}" in
+          tekton-platform*|tests*|scripts*|kubernetes*|kustomize*|docker*)
+            echo '[]' > "$(results.changed-modules.path)"
+            exit 0
+            ;;
+        esac
+
         # Trim the name and parse the changed modules into an array.
         CLEANED=$(echo -n "${CHANGED_MODULES}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
         echo -n "${CLEANED}" | jq -Rs '
