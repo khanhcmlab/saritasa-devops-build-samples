@@ -65,6 +65,9 @@ spec:
       volumeMounts:
         - name: shared-data
           mountPath: /shared
+        - name: webhook-secret-volume
+          mountPath: /etc/webhook-secret
+          readOnly: true
       script: |
         #!/bin/sh
         set -e
@@ -88,25 +91,32 @@ spec:
         COMPONENT_CLEAN=$(echo "$(params.component)" | tr '/_' '--')
         echo "Dispatching pending PipelineRun for component: $(params.component) (clean name: ${COMPONENT_CLEAN}) via EventListener..."
 
+        WEBHOOK_SECRET=$(cat /etc/webhook-secret/token)
+
+        PAYLOAD='{
+          "component": "$(params.component)",
+          "git-revision": "$(params.git-revision)",
+          "git-repository-url": "$(params.git-repository-url)",
+          "registry-path": "$(params.registry-path)",
+          "action": "$(params.action)",
+          "max-concurrency": "$(params.max-concurrency)",
+          "namespace": "$(params.namespace)",
+          "container-name": "$(params.container-name)",
+          "clone-depth": "$(params.clone-depth)",
+          "delete-existing": "$(params.delete-existing)",
+          "parent-pipelinerun": "$(params.parent-pipelinerun)",
+          "pipeline-timeout": "$(params.pipeline-timeout)",
+          "deployment-timeout": "$(params.deployment-timeout)",
+          "workspace-size": "$(params.workspace-size)"
+        }'
+
+        SIGNATURE=$(echo -n "${PAYLOAD}" | openssl dgst -sha256 -hmac "${WEBHOOK_SECRET}" | awk '{print $NF}')
+
         RESPONSE=$(curl -s -X POST \
           -H "Content-Type: application/json" \
           -H "X-Event-Type: component-dispatch" \
-          -d '{
-            "component": "$(params.component)",
-            "git-revision": "$(params.git-revision)",
-            "git-repository-url": "$(params.git-repository-url)",
-            "registry-path": "$(params.registry-path)",
-            "action": "$(params.action)",
-            "max-concurrency": "$(params.max-concurrency)",
-            "namespace": "$(params.namespace)",
-            "container-name": "$(params.container-name)",
-            "clone-depth": "$(params.clone-depth)",
-            "delete-existing": "$(params.delete-existing)",
-            "parent-pipelinerun": "$(params.parent-pipelinerun)",
-            "pipeline-timeout": "$(params.pipeline-timeout)",
-            "deployment-timeout": "$(params.deployment-timeout)",
-            "workspace-size": "$(params.workspace-size)"
-          }' \
+          -H "X-Hub-Signature-256: sha256=${SIGNATURE}" \
+          -d "${PAYLOAD}" \
           "http://el-gh-event-listener.${PARAM_NAMESPACE}.svc.cluster.local:8080")
 
         EVENT_ID=$(echo "${RESPONSE}" | jq -r '.eventID' 2>/dev/null || true)
@@ -324,3 +334,6 @@ spec:
   volumes:
     - name: shared-data
       emptyDir: {}
+    - name: webhook-secret-volume
+      secret:
+        secretName: github-webhook-secret

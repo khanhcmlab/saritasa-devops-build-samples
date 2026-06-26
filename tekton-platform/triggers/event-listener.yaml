@@ -48,6 +48,13 @@ spec:
     - name: dispatch-component-trigger
       interceptors:
         - ref:
+            name: "github"
+          params:
+            - name: "secretRef"
+              value:
+                secretName: "github-webhook-secret"
+                secretKey: "token"
+        - ref:
             name: "cel"
           params:
             - name: "filter"
