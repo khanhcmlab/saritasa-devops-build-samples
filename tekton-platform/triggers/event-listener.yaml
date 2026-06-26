@@ -24,6 +24,10 @@ spec:
           params:
             # - name: "filter"
             #   value: "body.ref == 'refs/heads/main'"
+            - name: "filter"
+              value: >
+                extensions.changed_files.split(',')
+                  .exists(f, !f.match('^(tekton-platform|tests|scripts|kubernetes|kustomize|docker)/.*'))
             - name: "overlays"
               value:
                 - key: "changed_modules"
