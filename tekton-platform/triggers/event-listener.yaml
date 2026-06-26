@@ -27,7 +27,7 @@ spec:
             - name: "filter"
               value: >
                 extensions.changed_files.split(',')
-                  .exists(f, !f.match('^(tekton-platform|tests|scripts|kubernetes|kustomize|docker)/.*'))
+                  .exists(f, !f.matches('^(tekton-platform|tests|scripts|kubernetes|kustomize|docker)/.*'))
             - name: "overlays"
               value:
                 - key: "changed_modules"
