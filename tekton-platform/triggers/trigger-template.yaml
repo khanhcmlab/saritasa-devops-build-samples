@@ -30,6 +30,8 @@ spec:
       description: The timeout for the deployment rollout check
     - name: workspace-size
       description: The workspace storage size.
+    - name: find-child-timeout
+      description: Timeout in seconds to wait for the child PipelineRun to be created.
   resourcetemplates:
     - apiVersion: tekton.dev/v1beta1
       kind: PipelineRun
@@ -69,5 +71,7 @@ spec:
             value: $(tt.params.deployment-timeout)
           - name: workspace-size
             value: $(tt.params.workspace-size)
+          - name: find-child-timeout
+            value: $(tt.params.find-child-timeout)
 
 

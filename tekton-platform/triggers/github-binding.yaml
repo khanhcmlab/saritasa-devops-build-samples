@@ -29,5 +29,8 @@ spec:
       value: "10m"
     - name: deployment-timeout
       value: "60s"
+    - name: find-child-timeout
+      value: "30"
     - name: workspace-size
       value: "1Gi"
+    

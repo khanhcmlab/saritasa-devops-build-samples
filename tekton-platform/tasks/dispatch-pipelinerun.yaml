@@ -55,6 +55,9 @@ spec:
     - name: workspace-size
       type: string
       description: The workspace storage size.
+    - name: find-child-timeout
+      type: string
+      description: Timeout in seconds to wait for the child PipelineRun to be created.
 
 
   steps:
@@ -153,9 +156,10 @@ spec:
           exit 1
         fi
 
-        echo "Waiting for child PipelineRun with eventID ${EVENT_ID} to be created..."
+        TIMEOUT="$(params.find-child-timeout)"
+        echo "Waiting for child PipelineRun with eventID ${EVENT_ID} to be created (timeout: ${TIMEOUT}s)..."
         CHILD_RUN=""
-        for i in $(seq 1 30); do
+        for i in $(seq 1 "${TIMEOUT}"); do
           CHILD_RUN=$(kubectl get pipelinerun -n ${PARAM_NAMESPACE} -l triggers.tekton.dev/triggers-eventid=${EVENT_ID} -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
           if [ -n "${CHILD_RUN}" ] && [ "${CHILD_RUN}" != "null" ]; then
             break
@@ -164,7 +168,7 @@ spec:
         done
 
         if [ -z "${CHILD_RUN}" ] || [ "${CHILD_RUN}" = "null" ]; then
-          echo "Error: Failed to find child PipelineRun with eventID: ${EVENT_ID} after 30 seconds."
+          echo "Error: Failed to find child PipelineRun with eventID: ${EVENT_ID} after ${TIMEOUT} seconds."
           exit 1
         fi
 
