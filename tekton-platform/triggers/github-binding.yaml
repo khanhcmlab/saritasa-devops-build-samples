@@ -1,0 +1,13 @@
+---
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: TriggerBinding
+metadata:
+  name: github-merge-binding
+spec:
+  params:
+    - name: git-revision
+      value: $(body.after)
+    - name: git-repository-url
+      value: $(body.repository.clone_url)
+    - name: changed-modules
+      value: $(extensions.changed_modules)

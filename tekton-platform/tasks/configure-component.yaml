@@ -1,0 +1,122 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: configure-component
+spec:
+  description: >-
+    Determines technology stack, configures build parameters (such as the target registry
+    image path and builder image), and ensures project.toml is present for Cloud Native Buildpacks.
+  params:
+    - name: git-revision
+      type: string
+      description: The git revision/sha to build.
+    - name: registry-path
+      type: string
+      description: The target docker registry path.
+    - name: component
+      type: string
+      description: "The component to configure."
+  workspaces:
+    - name: source
+      description: Workspace containing the cloned repository.
+  results:
+    - name: component-name
+      description: "Clean name for Kubernetes deployment"
+    - name: source-subpath
+      description: "Subpath within the workspace where the component is located"
+    - name: builder
+      description: "Builder image to use"
+    - name: image
+      description: "Target image name to build"
+    - name: image-tag
+      description: "Sanitized tag used for the image"
+    - name: process-type
+      description: "Default process type for the component (e.g. web or binary name)"
+    - name: env-vars
+      description: "Environment variables parsed from project.toml"
+
+  steps:
+    - name: create-cache-dir
+      image: dewwripper/alpine-yq:0.0.1
+      script: |
+        #!/bin/sh
+        set -e
+        CHANGED_COMPONENT="$(params.component)"
+        echo "Creating cache directory for component: ${CHANGED_COMPONENT}"
+        mkdir -p "$(workspaces.source.path)/cache/${CHANGED_COMPONENT}"
+
+    - name: prepare-metadata
+      image: dewwripper/alpine-yq:0.0.1
+      script: |
+        #!/bin/sh
+        set -e
+        CHANGED_COMPONENT="$(params.component)"
+        TAG="$(params.git-revision)"
+        REGISTRY_PATH="$(params.registry-path)"
+
+        clean_name="${CHANGED_COMPONENT//[\/_]/-}"
+        clean_tag="${TAG//\//-}"
+        image="${REGISTRY_PATH}/${clean_name}:${clean_tag}"
+
+        echo -n "${clean_name}"        > "$(results.component-name.path)"
+        echo -n "${clean_tag}"        > "$(results.image-tag.path)"
+        echo -n "${image}"            > "$(results.image.path)"
+        echo -n "${CHANGED_COMPONENT}" > "$(results.source-subpath.path)"
+
+    - name: select-builder
+      image: dewwripper/alpine-yq:0.0.1
+      script: |
+        #!/bin/sh
+        set -e
+        CHANGED_COMPONENT="$(params.component)"
+        TECH_STACK="${CHANGED_COMPONENT%%/*}"
+
+        BUILDER_TINY="paketobuildpacks/builder-jammy-tiny:latest"
+        BUILDER_BASE="paketobuildpacks/builder-jammy-base:latest"
+        BUILDER_FULL="paketobuildpacks/builder-jammy-full:latest"
+
+        # Select builder based on TECH_STACK concepts (Tiny, Base, Full)
+        case "${TECH_STACK}" in
+          go)
+            builder="${BUILDER_TINY}"
+            ;;
+          php)
+            builder="${BUILDER_FULL}"
+            ;;
+          *)
+            if [[ "${CHANGED_COMPONENT}" == *"native-image"* ]]; then
+              builder="${BUILDER_TINY}"
+            else
+              builder="${BUILDER_BASE}"
+            fi
+            ;;
+        esac
+        echo -n "${builder}" > "$(results.builder.path)"
+
+    - name: parse-env-vars
+      image: dewwripper/alpine-yq:0.0.1
+      script: |
+        #!/bin/sh
+        set -e
+
+        CHANGED_COMPONENT="$(params.component)"
+        path_to_app="$(workspaces.source.path)/${CHANGED_COMPONENT}"
+        target_toml="${path_to_app}/project.toml"
+        
+        ENV_VARS_JSON="[]"
+
+        if [ -f "${target_toml}" ]; then
+          echo "Parsing Environment Variables from ${target_toml}..."
+          ENV_VARS_JSON=$(yq eval '(.build.env[] | .name + "=" + .value) // []' "${target_toml}" -o=json 2>/dev/null)
+        fi
+
+        echo "ENV_VARS_JSON=${ENV_VARS_JSON}"
+        echo -n "${ENV_VARS_JSON}" > "$(results.env-vars.path)"
+
+    - name: output-process-type
+      image: dewwripper/alpine-yq:0.0.1
+      script: |
+        #!/bin/sh
+        set -e
+        # Output process-type result (PROCESS_TYPE environment variable is empty/unset)
+        echo -n "${PROCESS_TYPE}" > "$(results.process-type.path)"

@@ -1,0 +1,316 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: dispatch-pipelinerun
+spec:
+  description: >-
+    Waits for a concurrency slot, dispatches a child PipelineRun for a component
+    via the EventListener, and monitors it until completion.
+
+    Flow: wait-concurrency -> dispatch-request -> find-child -> monitor
+
+  params:
+    - name: component
+      type: string
+      description: The name of the component to build and deploy.
+    - name: git-revision
+      type: string
+      description: The git revision/sha to build.
+    - name: git-repository-url
+      type: string
+      description: The git repository URL.
+    - name: registry-path
+      type: string
+      description: The target docker registry path.
+    - name: action
+      type: string
+      description: The action to perform (build or deploy).
+    - name: max-concurrency
+      type: string
+      description: Maximum number of concurrent PipelineRuns allowed.
+    - name: namespace
+      type: string
+      description: The namespace for all PipelineRun operations.
+    - name: container-name
+      type: string
+      description: The container name in the Deployment to patch.
+    - name: clone-depth
+      type: string
+      description: The depth of the git clone.
+    - name: delete-existing
+      type: string
+      description: Whether to clean the repo destination before cloning.
+    - name: parent-pipelinerun
+      type: string
+      description: The name of the parent orchestrator PipelineRun.
+    - name: changed-modules
+      type: array
+      description: The ordered list of changed modules (used for stagger index).
+    - name: pipeline-timeout
+      type: string
+      description: The timeout for the component pipeline.
+    - name: deployment-timeout
+      type: string
+      description: The timeout for the deployment rollout check.
+    - name: workspace-size
+      type: string
+      description: The workspace storage size.
+    - name: find-child-timeout
+      type: string
+      description: Timeout in seconds to wait for the child PipelineRun to be created.
+
+  steps:
+    - name: wait-concurrency-limit
+      image: alpine/k8s:1.33.13
+      args:
+        - "$(params.changed-modules[*])"
+      volumeMounts:
+        - name: shared-data
+          mountPath: /shared
+      script: |
+        #!/bin/sh
+        set -e
+
+        PARAM_NAMESPACE="$(params.namespace)"
+        MAX_CONCURRENCY="$(params.max-concurrency)"
+        CURRENT_MODULE="$(params.component)"
+        PARENT_RUN="$(params.parent-pipelinerun)"
+
+        # Find index of a module within changed modules array
+        find_module_index() {
+          local current="$1"
+          shift
+          local idx=0
+          for mod in "$@"; do
+            if [ "${mod}" = "${current}" ]; then
+              echo "${idx}"
+              return 0
+            fi
+            idx=$((idx + 1))
+          done
+          echo "${idx}"
+        }
+
+        # Query all child PipelineRuns belonging to this orchestrator run
+        get_child_runs_json() {
+          kubectl get pipelinerun -n "${PARAM_NAMESPACE}" \
+            -l "orchestrator-pipelinerun=${PARENT_RUN}" -o json 2>/dev/null || echo "{}"
+        }
+
+        # Check if a component's PipelineRun has completed execution
+        is_component_completed() {
+          local json="$1"
+          local comp="$2"
+          echo "${json}" | jq --arg comp "${comp}" '
+            [.items[] |
+            select(.spec.params[]? | select(.name == "component" and .value == $comp)) |
+            select(.status.conditions[]? | select(.type == "Succeeded" and (.status == "True" or .status == "False")))] |
+            length > 0
+          ' 2>/dev/null || echo "false"
+        }
+
+        # Count preceding components in changed-modules array that are not yet completed
+        count_uncompleted_preceding() {
+          local json="$1"
+          shift
+          local count=0
+          local idx=0
+          for mod in "$@"; do
+            if [ "${idx}" -ge "${INDEX}" ]; then
+              break
+            fi
+            local completed
+            completed=$(is_component_completed "${json}" "${mod}")
+            if [ "${completed}" != "true" ]; then
+              count=$((count + 1))
+            fi
+            idx=$((idx + 1))
+          done
+          echo "${count}"
+        }
+
+        # Count globally running component PipelineRuns in the namespace
+        get_active_count() {
+          kubectl get pipelinerun -n "${PARAM_NAMESPACE}" -o json 2>/dev/null | \
+            jq '[.items[] |
+            select(.spec.pipelineRef.name == "component-pipeline") |
+            select(.status.conditions == null or ([.status.conditions[]? |
+            select(.type == "Succeeded" and (.status == "True" or .status == "False"))] |
+            length == 0))] | length' 2>/dev/null || echo "0"
+        }
+
+        # Resolve stagger details and wait-concurrency parameters
+        INDEX=$(find_module_index "${CURRENT_MODULE}" "$@")
+        STAGGER_DELAY=$((INDEX * 10))
+
+        echo "Staggering concurrency check by ${STAGGER_DELAY} seconds (index: ${INDEX})..."
+        sleep ${STAGGER_DELAY}
+
+        # Main concurrency and ordering wait loop
+        while true; do
+          ACTIVE_COUNT=$(get_active_count)
+          echo "Current active running component PipelineRuns in namespace: ${ACTIVE_COUNT} (max: ${MAX_CONCURRENCY})"
+
+          CHILD_RUNS_JSON=$(get_child_runs_json)
+          UNCOMPLETED_PRECEDING=$(count_uncompleted_preceding "${CHILD_RUNS_JSON}" "$@")
+          echo "Preceding uncompleted components for index ${INDEX}: ${UNCOMPLETED_PRECEDING} (max: ${MAX_CONCURRENCY})"
+
+          if [ "${ACTIVE_COUNT}" -lt "${MAX_CONCURRENCY}" ] && [ "${UNCOMPLETED_PRECEDING}" -lt "${MAX_CONCURRENCY}" ]; then
+            echo "Conditions met. Proceeding to dispatch component PipelineRun."
+            break
+          fi
+
+          echo "Concurrency limit or ordering constraint active. Waiting 10 seconds..."
+          sleep 10
+        done
+
+    - name: dispatch-request
+      image: alpine/k8s:1.33.13
+      args:
+        - "$(params.changed-modules[*])"
+      volumeMounts:
+        - name: shared-data
+          mountPath: /shared
+        - name: webhook-secret-volume
+          mountPath: /etc/webhook-secret
+          readOnly: true
+      script: |
+        #!/bin/sh
+        set -e
+
+        # Ensure openssl is installed
+        if ! command -v openssl >/dev/null 2>&1; then
+          echo "Installing openssl..."
+          apk add --no-cache openssl
+        fi
+
+        PARAM_NAMESPACE="$(params.namespace)"
+        CURRENT_MODULE="$(params.component)"
+
+        INDEX=0
+        for mod in "$@"; do
+          if [ "${mod}" = "${CURRENT_MODULE}" ]; then
+            break
+          fi
+          INDEX=$((INDEX + 1))
+        done
+
+        # Stagger HTTP dispatch requests slightly to prevent API collisions
+        CURL_DELAY=$((INDEX * 1))
+        echo "Staggering HTTP dispatch by ${CURL_DELAY} seconds (index: ${INDEX})...."
+        sleep ${CURL_DELAY}
+
+        COMPONENT_CLEAN=$(echo "$(params.component)" | tr '/_' '--')
+        echo "Dispatching PipelineRun for component: $(params.component) (clean name: ${COMPONENT_CLEAN}) via EventListener..."
+
+        WEBHOOK_SECRET=$(cat /etc/webhook-secret/token)
+
+        PAYLOAD='{
+          "component": "$(params.component)",
+          "git-revision": "$(params.git-revision)",
+          "git-repository-url": "$(params.git-repository-url)",
+          "parent-pipelinerun": "$(params.parent-pipelinerun)"
+        }'
+
+        SIGNATURE=$(echo -n "${PAYLOAD}" | openssl dgst -sha256 -hmac "${WEBHOOK_SECRET}" | awk '{print $NF}')
+
+        RESPONSE=$(curl -s -X POST \
+          -H "Content-Type: application/json" \
+          -H "X-Event-Type: component-dispatch" \
+          -H "X-Hub-Signature-256: sha256=${SIGNATURE}" \
+          -d "${PAYLOAD}" \
+          "http://el-gh-event-listener.${PARAM_NAMESPACE}.svc.cluster.local:8080")
+
+        EVENT_ID=$(echo "${RESPONSE}" | jq -r '.eventID' 2>/dev/null || true)
+
+        if [ -z "${EVENT_ID}" ] || [ "${EVENT_ID}" = "null" ]; then
+          echo "Error: Failed to obtain eventID from EventListener response."
+          echo "Response was: ${RESPONSE}"
+          exit 1
+        fi
+
+        echo -n "${EVENT_ID}" > /shared/event_id
+        echo "Event ID ${EVENT_ID} written to shared volume."
+
+    - name: find-child-pipelinerun
+      image: alpine/k8s:1.33.13
+      volumeMounts:
+        - name: shared-data
+          mountPath: /shared
+      script: |
+        #!/bin/sh
+        set -e
+
+        PARAM_NAMESPACE="$(params.namespace)"
+        EVENT_ID=$(cat /shared/event_id)
+
+        if [ -z "${EVENT_ID}" ]; then
+          echo "Error: Event ID not found in /shared/event_id."
+          exit 1
+        fi
+
+        TIMEOUT="$(params.find-child-timeout)"
+        echo "Waiting for child PipelineRun with eventID ${EVENT_ID} to be created (timeout: ${TIMEOUT}s)..."
+        CHILD_RUN=""
+        for i in $(seq 1 "${TIMEOUT}"); do
+          CHILD_RUN=$(kubectl get pipelinerun -n ${PARAM_NAMESPACE} -l triggers.tekton.dev/triggers-eventid=${EVENT_ID} -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+          if [ -n "${CHILD_RUN}" ] && [ "${CHILD_RUN}" != "null" ]; then
+            break
+          fi
+          sleep 1
+        done
+
+        if [ -z "${CHILD_RUN}" ] || [ "${CHILD_RUN}" = "null" ]; then
+          echo "Error: Failed to find child PipelineRun with eventID: ${EVENT_ID} after ${TIMEOUT} seconds."
+          exit 1
+        fi
+
+        echo -n "${CHILD_RUN}" > /shared/child_run
+        echo "Successfully dispatched child PipelineRun: ${CHILD_RUN}"
+
+    - name: monitor-pipelinerun
+      image: alpine/k8s:1.33.13
+      volumeMounts:
+        - name: shared-data
+          mountPath: /shared
+      script: |
+        #!/bin/sh
+        set -e
+
+        PARAM_NAMESPACE="$(params.namespace)"
+        CHILD_RUN=$(cat /shared/child_run)
+
+        if [ -z "${CHILD_RUN}" ]; then
+          echo "Error: Child PipelineRun name not found in /shared/child_run."
+          exit 1
+        fi
+
+        # Wait for the child PipelineRun to complete
+        while true; do
+          PIPELINERUN_JSON=$(kubectl get pipelinerun ${CHILD_RUN} -n ${PARAM_NAMESPACE} -o json 2>/dev/null || echo "{}")
+          STATUS=$(echo "${PIPELINERUN_JSON}" | jq -r '.status.conditions[]? | select(.type == "Succeeded") | .status' 2>/dev/null || echo "null")
+          REASON=$(echo "${PIPELINERUN_JSON}" | jq -r '.status.conditions[]? | select(.type == "Succeeded") | .reason' 2>/dev/null || echo "null")
+
+          # Handle the case where status is not yet populated
+          if [ -z "${STATUS}" ] || [ "${STATUS}" = "null" ]; then
+            STATUS="Unknown"
+          fi
+
+          if [ "${STATUS}" = "True" ]; then
+            echo "Child PipelineRun ${CHILD_RUN} completed successfully!"
+            break
+          elif [ "${STATUS}" = "False" ]; then
+            echo "Child PipelineRun ${CHILD_RUN} failed with reason: ${REASON}."
+            exit 1
+          fi
+
+          echo "Child PipelineRun ${CHILD_RUN} is still running (status: ${STATUS}, reason: ${REASON}). Waiting 10 seconds..."
+          sleep 10
+        done
+
+  volumes:
+    - name: shared-data
+      emptyDir: {}
+    - name: webhook-secret-volume
+      secret:
+        secretName: github-webhook-secret

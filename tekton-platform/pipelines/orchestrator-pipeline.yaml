@@ -1,0 +1,96 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: orchestrator-pipeline
+spec:
+  params:
+    - name: git-revision
+      type: string
+      description: The git revision/sha to build.
+    - name: git-repository-url
+      type: string
+      description: The git repository URL.
+    - name: action
+      type: string
+      description: The action to perform (build or deploy).
+    - name: registry-path
+      type: string
+      description: The target docker registry path.
+    - name: max-concurrency
+      type: string
+      description: Maximum number of concurrent PipelineRuns allowed in the namespace.
+    - name: namespace
+      type: string
+      description: The namespace to check active PipelineRuns in.
+    - name: container-name
+      type: string
+      description: The container name in the Deployment to patch.
+    - name: clone-depth
+      type: string
+      description: The depth of the git clone.
+    - name: delete-existing
+      type: string
+      description: Clean out the contents of the repo's destination directory if it already exists before cloning.
+    - name: changed-modules
+      type: string
+      description: The list of changed modules to build.
+    - name: pipeline-timeout
+      type: string
+      description: The timeout for the component pipelines
+    - name: deployment-timeout
+      type: string
+      description: The timeout for the deployment rollout check
+    - name: workspace-size
+      type: string
+      description: The size of the component pipeline workspace.
+    - name: find-child-timeout
+      type: string
+      description: Timeout in seconds to wait for the child PipelineRun to be created.
+  tasks:
+    - name: parse-changed-modules
+      taskRef:
+        name: parse-changed-modules
+      params:
+        - name: changed-modules
+          value: "$(params.changed-modules)"
+    - name: dispatch-pipelineruns
+      runAfter:
+        - parse-changed-modules
+      matrix:
+        params:
+          - name: component
+            value: $(tasks.parse-changed-modules.results.changed-modules[*])
+      taskRef:
+        name: dispatch-pipelinerun
+      params:
+        - name: git-revision
+          value: "$(params.git-revision)"
+        - name: git-repository-url
+          value: "$(params.git-repository-url)"
+        - name: registry-path
+          value: "$(params.registry-path)"
+        - name: action
+          value: "$(params.action)"
+        - name: max-concurrency
+          value: "$(params.max-concurrency)"
+        - name: namespace
+          value: "$(params.namespace)"
+        - name: container-name
+          value: "$(params.container-name)"
+        - name: clone-depth
+          value: "$(params.clone-depth)"
+        - name: delete-existing
+          value: "$(params.delete-existing)"
+        - name: parent-pipelinerun
+          value: "$(context.pipelineRun.name)"
+        - name: changed-modules
+          value:
+            - "$(tasks.parse-changed-modules.results.changed-modules[*])"
+        - name: pipeline-timeout
+          value: "$(params.pipeline-timeout)"
+        - name: deployment-timeout
+          value: "$(params.deployment-timeout)"
+        - name: workspace-size
+          value: "$(params.workspace-size)"
+        - name: find-child-timeout
+          value: "$(params.find-child-timeout)"

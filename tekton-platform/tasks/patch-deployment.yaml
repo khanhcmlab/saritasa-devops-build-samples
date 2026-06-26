@@ -1,0 +1,111 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: deploy
+spec:
+  description: >-
+    Patches a Kubernetes Deployment with a new image tag (typically the commit SHA)
+    and monitors the rollout to completion.
+  workspaces:
+    - name: source
+      description: Workspace containing the application source code and scripts.
+  params:
+    - name: deployment-name
+      type: string
+      description: The name of the Deployment to patch.
+    - name: container-name
+      type: string
+      description: The container name in the Deployment to patch.
+    - name: image-name
+      type: string
+      description: The base image name (without tag).
+    - name: tag
+      type: string
+      description: The new image tag (e.g., commit SHA) to apply.
+    - name: namespace
+      type: string
+      description: The target Kubernetes namespace.
+    - name: deployment-timeout
+      type: string
+      description: The timeout for the deployment rollout check
+    - name: readiness-recheck-delay
+      type: string
+      description: Seconds to wait before rechecking pod readiness after rollout.
+  steps:
+    - name: create-deployment
+      image: alpine/k8s:1.20.4
+      script: |
+        #!/bin/sh
+        set -e
+        DEPLOY_NAME="$(params.deployment-name)"
+        NS="$(params.namespace)"
+        CONTAINER="$(params.container-name)"
+        FULL_IMAGE="$(params.image-name):$(params.tag)"
+
+        if ! kubectl get deployment "$DEPLOY_NAME" -n "$NS" >/dev/null 2>&1; then
+          echo "Deployment $DEPLOY_NAME does not exist. Creating..."
+          cat <<EOF | kubectl apply -f -
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: $DEPLOY_NAME
+          namespace: $NS
+        spec:
+          selector:
+            matchLabels:
+              app: $DEPLOY_NAME
+          template:
+            metadata:
+              labels:
+                app: $DEPLOY_NAME
+            spec:
+              serviceAccountName: pipeline-service-account
+              nodeSelector:
+                node: hp
+              imagePullSecrets:
+                - name: ghcr-creds
+              containers:
+                - name: $CONTAINER
+                  image: $FULL_IMAGE
+        EOF
+
+          echo "Waiting for deployment to be available..."
+          if ! kubectl rollout status deployment/"$DEPLOY_NAME" -n "$NS" --timeout="$(params.deployment-timeout)"; then
+            echo "ERROR: Deployment $DEPLOY_NAME failed to become ready. Cleaning up..." >&2
+            kubectl delete deployment "$DEPLOY_NAME" -n "$NS" --ignore-not-found
+            exit 1
+          fi
+        else
+          echo "Deployment $DEPLOY_NAME already exists."
+        fi
+
+    - name: patch-deployment
+      image: alpine/k8s:1.20.4
+      script: |
+        #!/bin/sh
+        set -e
+        DEPLOY_NAME="$(params.deployment-name)"
+        NS="$(params.namespace)"
+        CONTAINER="$(params.container-name)"
+        FULL_IMAGE="$(params.image-name):$(params.tag)"
+
+        echo "Updating deployment image..."
+        kubectl set image deployment/$DEPLOY_NAME $CONTAINER=$FULL_IMAGE -n $NS
+
+        echo "Waiting for rollout..."
+        if ! kubectl rollout status deployment/$DEPLOY_NAME -n $NS --timeout="$(params.deployment-timeout)"; then
+          echo "ERROR: Timeout or rollout failed!" >&2
+          exit 1
+        fi
+
+        echo "Rollout finished. Double checking Pods readiness..."
+        sleep "$(params.readiness-recheck-delay)"
+
+        UNREADY_PODS=$(kubectl get pods -n $NS -l app=$DEPLOY_NAME --field-selector status.phase=Running -o jsonpath='{range .items[*]}{.status.containerStatuses[*].ready}{"\n"}{end}' | grep -c "false" || true)
+
+        if [ "$UNREADY_PODS" -gt 0 ]; then
+          echo "ERROR: Rollout reported success, but $UNREADY_PODS pod(s) are NOT READY!" >&2
+          exit 1
+        fi
+
+        echo "Deployment is fully up and stable!"

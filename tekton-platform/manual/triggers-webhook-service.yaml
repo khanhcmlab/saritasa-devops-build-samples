@@ -1,0 +1,17 @@
+# NOTE: This Service must be applied manually/separately (e.g., via `kubectl apply -f triggers-webhook-service.yaml`).
+# Do NOT include this file in kustomization.yaml. Because the kustomization namespace is set to `saritasa-test`,
+# Kustomize's namespace transformer would automatically override the namespace from `default` to `saritasa-test`,
+# breaking the requirement that this service resides in the `default` namespace.
+apiVersion: v1
+kind: Service
+metadata:
+  name: gh-listener-webhook
+  namespace: default
+spec:
+  type: ExternalName
+  externalName: el-gh-event-listener.saritasa-test.svc.cluster.local
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP

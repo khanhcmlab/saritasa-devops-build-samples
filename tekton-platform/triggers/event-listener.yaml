@@ -1,0 +1,62 @@
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: EventListener
+metadata:
+  name: gh-event-listener
+spec:
+  serviceAccountName: pipeline-service-account
+  triggers:
+    - name: merge-main-trigger
+      interceptors:
+        - ref:
+            name: "github"
+          params:
+            - name: "secretRef"
+              value:
+                secretName: "github-webhook-secret"
+                secretKey: "token"
+            - name: "eventTypes"
+              value: ["push"]
+            - name: "addChangedFiles"
+              value:
+                enabled: true
+        - ref:
+            name: "cel"
+          params:
+            # - name: "filter"
+            #   value: "body.ref == 'refs/heads/main'"
+            - name: "overlays"
+              value:
+                - key: "changed_modules"
+                  expression: |
+                    extensions.changed_files.split(',')
+                      .distinct()
+                      .marshalJSON()
+                      
+      bindings:
+        - ref: github-merge-binding
+        - ref: common-binding
+      template:
+        ref: trigger-template
+    - name: dispatch-component-trigger
+      interceptors:
+        - ref:
+            name: "github"
+          params:
+            - name: "secretRef"
+              value:
+                secretName: "github-webhook-secret"
+                secretKey: "token"
+        - ref:
+            name: "cel"
+          params:
+            - name: "filter"
+              value: "header.match('X-Event-Type', 'component-dispatch')"
+            - name: "overlays"
+              value:
+                - key: "component_clean"
+                  expression: "body.component.replace('/', '-').replace('_', '-')"
+      bindings:
+        - ref: component-dispatch-binding
+        - ref: common-binding
+      template:
+        ref: component-dispatch-template

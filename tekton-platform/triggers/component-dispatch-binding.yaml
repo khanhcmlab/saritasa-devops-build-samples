@@ -1,0 +1,17 @@
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: TriggerBinding
+metadata:
+  name: component-dispatch-binding
+spec:
+  params:
+    - name: component
+      value: $(body.component)
+    - name: component-clean
+      value: $(extensions.component_clean)
+    - name: git-revision
+      value: $(body.git-revision)
+    - name: git-repository-url
+      value: $(body.git-repository-url)
+    - name: parent-pipelinerun
+      value: $(body.parent-pipelinerun)
+

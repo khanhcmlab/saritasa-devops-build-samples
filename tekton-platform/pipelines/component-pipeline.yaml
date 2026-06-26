@@ -1,0 +1,128 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: component-pipeline
+spec:
+  params:
+    - name: component
+      type: string
+      description: The component/subdirectory to configure and build.
+    - name: git-revision
+      type: string
+      description: The git revision/sha to build.
+    - name: git-repository-url
+      type: string
+      description: The git repository URL.
+    - name: registry-path
+      type: string
+      description: The target docker registry path.
+    - name: action
+      type: string
+      description: The action to perform (build or deploy).
+    - name: max-concurrency
+      type: string
+      description: Maximum number of concurrent PipelineRuns allowed in the namespace.
+    - name: namespace
+      type: string
+      description: The namespace to check active PipelineRuns in.
+    - name: container-name
+      type: string
+      description: The container name in the Deployment to patch.
+    - name: clone-depth
+      type: string
+      description: The depth of the git clone.
+    - name: delete-existing
+      type: string
+      description: Clean out the contents of the repo's destination directory if it already exists before cloning.
+    - name: deployment-timeout
+      type: string
+      description: The timeout for the deployment rollout check
+  workspaces:
+    - name: source-workspace
+      description: Workspace where source code is cloned and built.
+    - name: cache
+      description: Workspace for caching buildpack layers.
+  tasks:
+    - name: git-clone
+      taskRef:
+        name: git-clone
+        # Reference: https://raw.githubusercontent.com/tektoncd/catalog/main/task/git-clone/0.9/git-clone.yaml
+      workspaces:
+        - name: output
+          workspace: source-workspace
+      params:
+        - name: url
+          value: "$(params.git-repository-url)"
+        - name: revision
+          value: "$(params.git-revision)"
+        - name: delete-existing
+          value: "$(params.delete-existing)"
+        - name: depth
+          value: "$(params.clone-depth)"
+    - name: configure-component
+      runAfter:
+        - git-clone
+      workspaces:
+        - name: source
+          workspace: source-workspace
+      taskRef:
+        name: configure-component
+      params:
+        - name: git-revision
+          value: "$(params.git-revision)"
+        - name: registry-path
+          value: "$(params.registry-path)"
+        - name: component
+          value: "$(params.component)"
+    - name: build
+      runAfter:
+        - configure-component
+      taskRef:
+        name: buildpacks
+        # Reference: https://raw.githubusercontent.com/tektoncd/catalog/main/task/buildpacks/0.6/buildpacks.yaml
+      workspaces:
+        - name: source
+          workspace: source-workspace
+        - name: cache
+          workspace: cache
+      params:
+        - name: APP_IMAGE
+          value: "$(tasks.configure-component.results.image)"
+        - name: SOURCE_SUBPATH
+          value: "$(tasks.configure-component.results.source-subpath)"
+        - name: BUILDER_IMAGE
+          value: "$(tasks.configure-component.results.builder)"
+        - name: PROCESS_TYPE
+          value: "$(tasks.configure-component.results.process-type)"
+        - name: ENV_VARS
+          value:
+            - "$(tasks.configure-component.results.env-vars[*])"
+        - name: USER_ID
+          value: "1001"
+        - name: GROUP_ID
+          value: "1000"
+    - name: deploy
+      runAfter:
+        - build
+      when:
+        - input: "$(params.action)"
+          operator: in
+          values: ["deploy"]
+      taskRef:
+        name: deploy
+      workspaces:
+        - name: source
+          workspace: source-workspace
+      params:
+        - name: deployment-name
+          value: "$(tasks.configure-component.results.component-name)"
+        - name: image-name
+          value: "$(params.registry-path)/$(tasks.configure-component.results.component-name)"
+        - name: tag
+          value: "$(tasks.configure-component.results.image-tag)"
+        - name: container-name
+          value: "$(params.container-name)"
+        - name: namespace
+          value: "$(params.namespace)"
+        - name: deployment-timeout
+          value: "$(params.deployment-timeout)"
