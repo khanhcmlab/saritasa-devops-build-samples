@@ -23,19 +23,33 @@ spec:
       script: |
         #!/bin/sh
         
-        # Skip processing if CHANGED_MODULES starts with an excluded prefix.
-        case "${CHANGED_MODULES}" in
-          tekton-platform*|tests*|scripts*|kubernetes*|kustomize*|docker*)
-            echo '[]' > "$(results.changed-modules.path)"
-            exit 0
-            ;;
-        esac
-
-        # Trim the name and parse the changed modules into an array.
+        # Trim whitespace from input.
         CLEANED=$(echo -n "${CHANGED_MODULES}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-        echo -n "${CLEANED}" | jq -Rs '
+        
+        # Parse input into newline-separated list of file paths.
+        FILES=$(echo -n "${CLEANED}" | jq -Rs '
           if . == "" or . == "[]" or . == "[\"\"]" then []
           elif startswith("[") then fromjson
           else gsub(","; " ") | split(" ") | map(select(. != ""))
           end
-        ' -c > "$(results.changed-modules.path)"
+        ' | jq -r '.[]')
+        
+        # Extract module paths:
+        # - Java modules: split by /src/ and take the first part
+        # - Others: take the first two path segments
+        MODULES=""
+        for f in ${FILES}; do
+          case "${f}" in
+            java/*)
+              mod=$(echo "${f}" | sed 's|/src/.*||')
+              ;;
+            *)
+              mod=$(echo "${f}" | cut -d'/' -f1-2)
+              ;;
+          esac
+          MODULES="${MODULES}${mod}\n"
+        done
+        
+        # Deduplicate and convert to JSON array.
+        printf "${MODULES}" | sort -u | sed '/^$/d' | jq -Rsc 'split("\n") | map(select(. != ""))' \
+          > "$(results.changed-modules.path)"
