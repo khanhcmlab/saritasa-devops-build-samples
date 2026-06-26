@@ -22,7 +22,7 @@ public class DemoApplication {
 		public Flux<Product> getAllProducts() {
 			return Flux.fromIterable(Arrays.asList(
 					new Product(1L, "Shovel", 10),
-					new Product(2L, "Winter Coat 1", 100),
+					new Product(2L, "Winter Coat", 100),
 					new Product(3L, "Gloves", 20),
 					new Product(4L, "Montréal Poutine", 20)
 			));
