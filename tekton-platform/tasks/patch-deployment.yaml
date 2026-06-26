@@ -28,6 +28,9 @@ spec:
     - name: deployment-timeout
       type: string
       description: The timeout for the deployment rollout check
+    - name: readiness-recheck-delay
+      type: string
+      description: Seconds to wait before rechecking pod readiness after rollout.
   steps:
     - name: create-deployment
       image: alpine/k8s:1.20.4
@@ -96,7 +99,7 @@ spec:
         fi
 
         echo "Rollout finished. Double checking Pods readiness..."
-        sleep 15
+        sleep "$(params.readiness-recheck-delay)"
 
         UNREADY_PODS=$(kubectl get pods -n $NS -l app=$DEPLOY_NAME --field-selector status.phase=Running -o jsonpath='{range .items[*]}{.status.containerStatuses[*].ready}{"\n"}{end}' | grep -c "false" || true)
 
