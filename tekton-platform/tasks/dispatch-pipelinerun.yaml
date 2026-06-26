@@ -209,17 +209,7 @@ spec:
           "component": "$(params.component)",
           "git-revision": "$(params.git-revision)",
           "git-repository-url": "$(params.git-repository-url)",
-          "registry-path": "$(params.registry-path)",
-          "action": "$(params.action)",
-          "max-concurrency": "$(params.max-concurrency)",
-          "namespace": "$(params.namespace)",
-          "container-name": "$(params.container-name)",
-          "clone-depth": "$(params.clone-depth)",
-          "delete-existing": "$(params.delete-existing)",
-          "parent-pipelinerun": "$(params.parent-pipelinerun)",
-          "pipeline-timeout": "$(params.pipeline-timeout)",
-          "deployment-timeout": "$(params.deployment-timeout)",
-          "workspace-size": "$(params.workspace-size)"
+          "parent-pipelinerun": "$(params.parent-pipelinerun)"
         }'
 
         SIGNATURE=$(echo -n "${PAYLOAD}" | openssl dgst -sha256 -hmac "${WEBHOOK_SECRET}" | awk '{print $NF}')
