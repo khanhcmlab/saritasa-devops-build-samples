@@ -37,6 +37,7 @@ spec:
                       
       bindings:
         - ref: github-merge-binding
+        - ref: common-binding
       template:
         ref: trigger-template
     - name: dispatch-component-trigger
@@ -58,7 +59,7 @@ spec:
                 - key: "component_clean"
                   expression: "body.component.replace('/', '-').replace('_', '-')"
       bindings:
-        - ref: github-merge-binding
         - ref: component-dispatch-binding
+        - ref: common-binding
       template:
         ref: component-dispatch-template
