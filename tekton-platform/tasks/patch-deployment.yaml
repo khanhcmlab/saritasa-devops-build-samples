@@ -94,3 +94,15 @@ spec:
           echo "ERROR: Timeout or rollout failed!" >&2
           exit 1
         fi
+
+        echo "Rollout finished. Double checking Pods readiness..."
+        sleep 15
+
+        UNREADY_PODS=$(kubectl get pods -n $NS -l app=$DEPLOY_NAME --field-selector status.phase=Running -o jsonpath='{range .items[*]}{.status.containerStatuses[*].ready}{"\n"}{end}' | grep -c "false" || true)
+
+        if [ "$UNREADY_PODS" -gt 0 ]; then
+          echo "ERROR: Rollout reported success, but $UNREADY_PODS pod(s) are NOT READY!" >&2
+          exit 1
+        fi
+
+        echo "Deployment is fully up and stable!"
