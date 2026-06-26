@@ -26,3 +26,5 @@ spec:
       value: "1Gi"
     - name: find-child-timeout
       value: "30"
+    - name: readiness-recheck-delay
+      value: "15"
