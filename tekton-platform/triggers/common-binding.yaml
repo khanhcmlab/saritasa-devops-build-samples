@@ -24,3 +24,5 @@ spec:
       value: "60s"
     - name: workspace-size
       value: "1Gi"
+    - name: find-child-timeout
+      value: "30"

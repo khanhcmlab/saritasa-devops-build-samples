@@ -65,6 +65,13 @@ spec:
                 - name: $CONTAINER
                   image: $FULL_IMAGE
         EOF
+
+          echo "Waiting for deployment to be available..."
+          if ! kubectl rollout status deployment/"$DEPLOY_NAME" -n "$NS" --timeout="$(params.deployment-timeout)"; then
+            echo "ERROR: Deployment $DEPLOY_NAME failed to become ready. Cleaning up..." >&2
+            kubectl delete deployment "$DEPLOY_NAME" -n "$NS" --ignore-not-found
+            exit 1
+          fi
         else
           echo "Deployment $DEPLOY_NAME already exists."
         fi

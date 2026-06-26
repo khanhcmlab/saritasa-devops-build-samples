@@ -11,6 +11,3 @@ spec:
       value: $(body.repository.clone_url)
     - name: changed-modules
       value: $(extensions.changed_modules)
-    - name: find-child-timeout
-      value: "30"
-    
