@@ -35,11 +35,15 @@ spec:
         ' | jq -r '.[]')
         
         # Extract module paths:
+        # - Skip excluded prefixes (infra/tooling directories)
         # - Java modules: split by /src/ and take the first part
         # - Others: take the first two path segments
         MODULES=""
         for f in ${FILES}; do
           case "${f}" in
+            tekton-platform/*|tests/*|scripts/*|kubernetes/*|kustomize/*|docker/*)
+              continue
+              ;;
             java/*)
               mod=$(echo "${f}" | sed 's|/src/.*||')
               ;;
