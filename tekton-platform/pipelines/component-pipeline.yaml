@@ -44,9 +44,9 @@ spec:
       description: Workspace for caching buildpack layers.
   tasks:
     - name: git-clone
-      # Reference: https://raw.githubusercontent.com/tektoncd/catalog/main/task/git-clone/0.9/git-clone.yaml
       taskRef:
         name: git-clone
+        # Reference: https://raw.githubusercontent.com/tektoncd/catalog/main/task/git-clone/0.9/git-clone.yaml
       workspaces:
         - name: output
           workspace: source-workspace
@@ -79,6 +79,7 @@ spec:
         - configure-component
       taskRef:
         name: buildpacks
+        # Reference: https://raw.githubusercontent.com/tektoncd/catalog/main/task/buildpacks/0.6/buildpacks.yaml
       workspaces:
         - name: source
           workspace: source-workspace
