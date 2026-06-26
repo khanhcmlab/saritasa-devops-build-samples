@@ -11,7 +11,8 @@ kind: Role
 metadata:
   name: pipeline-role
 rules:
-  - apiGroups: ["tekton.dev"]
+  - apiGroups:
+      - tekton.dev
     resources:
       - pipelineruns
       - pipelines
@@ -21,9 +22,8 @@ rules:
       - get
       - list
       - watch
-      - patch
-      - update
-  - apiGroups: ["triggers.tekton.dev"]
+  - apiGroups:
+      - triggers.tekton.dev
     resources:
       - eventlisteners
       - triggerbindings
@@ -36,7 +36,8 @@ rules:
       - watch
       - update
       - patch  
-  - apiGroups: ["apps"]
+  - apiGroups:
+      - apps
     resources:
       - deployments
     verbs:
@@ -45,7 +46,8 @@ rules:
       - list
       - patch
       - update
-  - apiGroups: [""]
+  - apiGroups:
+      - ""
     resources:
       - pods
       - pods/log
@@ -54,7 +56,8 @@ rules:
       - get
       - list
       - watch
-  - apiGroups: [""]
+  - apiGroups:
+      - ""
     resources:
       - persistentvolumeclaims
     verbs:

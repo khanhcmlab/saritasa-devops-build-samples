@@ -93,28 +93,6 @@ spec:
         esac
         echo -n "${builder}" > "$(results.builder.path)"
 
-    - name: ensure-project-toml
-      image: dewwripper/alpine-yq:0.0.1
-      script: |
-        #!/bin/sh
-        set -e
-        CHANGED_COMPONENT="$(params.component)"
-        TECH_STACK="${CHANGED_COMPONENT%%/*}"
-        path_to_app="$(workspaces.source.path)/${CHANGED_COMPONENT}"
-        target_toml="${path_to_app}/project.toml"
-
-        if [ ! -f "${target_toml}" ]; then
-          echo "project.toml does not exist. Creating..."
-          mkdir -p "${path_to_app}"
-          cat << EOF > "${target_toml}"
-        [[build.buildpacks]]
-        id = "paketo-buildpacks/${TECH_STACK}"
-        EOF
-          echo "Created project.toml successfully for ${TECH_STACK}"
-        else
-          echo "Found ${TECH_STACK} project.toml. Skipping creation."
-        fi
-
     - name: parse-env-vars
       image: dewwripper/alpine-yq:0.0.1
       script: |
